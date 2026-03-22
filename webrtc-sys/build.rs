@@ -165,6 +165,10 @@ fn main() {
             println!("cargo:rustc-link-lib=dylib=dl");
             println!("cargo:rustc-link-lib=dylib=pthread");
             println!("cargo:rustc-link-lib=dylib=m");
+            // Prebuilt libwebrtc (static) was built with _GLIBCXX_ASSERTIONS; system libstdc++
+            // often does not export __glibcxx_assert_fail/__throw_bad_array_new_length. Provide stubs.
+            builder.file("src/libstdcxx_stub.cpp");
+            println!("cargo:rustc-link-lib=dylib=stdc++");
 
             // In order to avoid any ABI mismatches we use the sysroot's headers.
             add_gio_headers(&mut builder);
@@ -242,10 +246,13 @@ fn main() {
                 }
             }
 
+            // Use c++2a for GCC < 11 compatibility (c++20 and c++2a are the same standard).
+            // -Wno-changes-meaning is Clang-only; omit on Linux (GCC). -fpermissive allows
+            // WebRTC header name lookup (e.g. PortInterface::Network()) to compile with GCC.
             builder
-                .flag("-Wno-changes-meaning")
                 .flag("-Wno-deprecated-declarations")
-                .flag("-std=c++20");
+                .flag("-std=c++2a")
+                .flag("-fpermissive");
         }
         "macos" => {
             println!("cargo:rustc-link-lib=framework=Foundation");
