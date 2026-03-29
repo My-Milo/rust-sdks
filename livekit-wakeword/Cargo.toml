@@ -6,15 +6,18 @@ edition.workspace = true
 repository.workspace = true
 license.workspace = true
 
+[features]
+default = ["tract-backend"]
+tract-backend = ["ort/alternative-backend", "dep:ort-tract"]
+ort-backend = []
+
 [dependencies]
+log = "0.4"
 ndarray = "0.17.2"
 ort = { version = "2.0.0-rc.11", default-features = false, features = ["ndarray", "std"] }
+ort-tract = { version = "0.2.0+0.22", optional = true }
 resampler = "0.4"
 thiserror = "2"
-
-[target.'cfg(not(all(target_arch = "aarch64", target_os = "windows", target_env = "msvc")))'.dependencies]
-ort = { version = "2.0.0-rc.11", default-features = false, features = ["alternative-backend"] }
-ort-tract = "0.2.0+0.22"
 
 [dev-dependencies]
 hound = "3.5"
