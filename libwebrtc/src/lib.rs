@@ -18,6 +18,8 @@ use thiserror::Error;
 #[cfg_attr(not(target_arch = "wasm32"), path = "native/mod.rs")]
 mod imp;
 
+mod enum_dispatch;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum MediaType {
     Audio,
@@ -68,7 +70,9 @@ pub mod video_track;
 pub mod native {
     pub use webrtc_sys::webrtc::ffi::create_random_uuid;
 
-    pub use crate::imp::{apm, audio_mixer, audio_resampler, frame_cryptor, yuv_helper};
+    pub use crate::imp::{
+        apm, audio_mixer, audio_resampler, frame_cryptor, packet_trailer, yuv_helper,
+    };
 }
 
 #[cfg(target_os = "android")]

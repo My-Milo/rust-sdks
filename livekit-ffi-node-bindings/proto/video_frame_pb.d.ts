@@ -201,6 +201,20 @@ export declare class NewVideoStreamRequest extends Message<NewVideoStreamRequest
    */
   normalizeStride?: boolean;
 
+  /**
+   * Maximum number of queued WebRTC sink frames on the receive path. Omit this
+   * field to use the default bounded queue size of 1 frame. Set it to 0 to
+   * request unbounded buffering.
+   *
+   * If your application consumes both audio and video, keep the queue sizing
+   * strategy coordinated across both streams. Using a much larger queue, or
+   * unbounded buffering, for only one of them can increase end-to-end latency
+   * for that stream and cause audio/video drift.
+   *
+   * @generated from field: optional uint32 queue_size_frames = 5;
+   */
+  queueSizeFrames?: number;
+
   constructor(data?: PartialMessage<NewVideoStreamRequest>);
 
   static readonly runtime: typeof proto2;
@@ -270,6 +284,20 @@ export declare class VideoStreamFromParticipantRequest extends Message<VideoStre
    * @generated from field: optional bool normalize_stride = 5;
    */
   normalizeStride?: boolean;
+
+  /**
+   * Maximum number of queued WebRTC sink frames on the receive path. Omit this
+   * field to use the default bounded queue size of 1 frame. Set it to 0 to
+   * request unbounded buffering.
+   *
+   * If your application consumes both audio and video, keep the queue sizing
+   * strategy coordinated across both streams. Using a much larger queue, or
+   * unbounded buffering, for only one of them can increase end-to-end latency
+   * for that stream and cause audio/video drift.
+   *
+   * @generated from field: optional uint32 queue_size_frames = 6;
+   */
+  queueSizeFrames?: number;
 
   constructor(data?: PartialMessage<VideoStreamFromParticipantRequest>);
 
@@ -401,6 +429,11 @@ export declare class CaptureVideoFrameRequest extends Message<CaptureVideoFrameR
    * @generated from field: required livekit.proto.VideoRotation rotation = 4;
    */
   rotation?: VideoRotation;
+
+  /**
+   * @generated from field: optional livekit.proto.FrameMetadata metadata = 5;
+   */
+  metadata?: FrameMetadata;
 
   constructor(data?: PartialMessage<CaptureVideoFrameRequest>);
 
@@ -655,6 +688,35 @@ export declare class OwnedVideoBuffer extends Message<OwnedVideoBuffer> {
 }
 
 /**
+ * @generated from message livekit.proto.FrameMetadata
+ */
+export declare class FrameMetadata extends Message<FrameMetadata> {
+  /**
+   * @generated from field: optional uint64 user_timestamp = 1;
+   */
+  userTimestamp?: bigint;
+
+  /**
+   * @generated from field: optional uint32 frame_id = 2;
+   */
+  frameId?: number;
+
+  constructor(data?: PartialMessage<FrameMetadata>);
+
+  static readonly runtime: typeof proto2;
+  static readonly typeName = "livekit.proto.FrameMetadata";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): FrameMetadata;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): FrameMetadata;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): FrameMetadata;
+
+  static equals(a: FrameMetadata | PlainMessage<FrameMetadata> | undefined, b: FrameMetadata | PlainMessage<FrameMetadata> | undefined): boolean;
+}
+
+/**
  * @generated from message livekit.proto.VideoStreamInfo
  */
 export declare class VideoStreamInfo extends Message<VideoStreamInfo> {
@@ -768,6 +830,11 @@ export declare class VideoFrameReceived extends Message<VideoFrameReceived> {
    * @generated from field: required livekit.proto.VideoRotation rotation = 3;
    */
   rotation?: VideoRotation;
+
+  /**
+   * @generated from field: optional livekit.proto.FrameMetadata metadata = 4;
+   */
+  metadata?: FrameMetadata;
 
   constructor(data?: PartialMessage<VideoFrameReceived>);
 

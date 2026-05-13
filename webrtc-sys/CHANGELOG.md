@@ -165,6 +165,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - bump libwebrtc to m125
+## 0.3.30 (2026-05-11)
+
+### Fixes
+
+#### Fix missing RTC_OBJC_TYPE macros in webrtc-sys .mm files
+
+Wrap bare ObjC class references in `RTC_OBJC_TYPE()` in `objc_video_factory.mm` and `objc_video_frame_buffer.mm` to support builds with `rtc_objc_prefix` set.
+
+#### Fix WebRTC build scripts to properly report failures and fix C++ module compilation issues
+
+- Add `set -e` to all build scripts so CI properly reports build failures instead of silently creating empty/broken artifacts
+- Re-add `use_clang_modules=false` to macOS, iOS, and Linux build scripts to fix C++ module compilation errors
+
+Without `use_clang_modules=false`, builds fail due to libc++ header incompatibilities (on macOS/iOS with Xcode 26.0) or other C++ module issues, resulting in:
+- macOS/iOS: Empty `libwebrtc.a` (~13KB instead of ~700MB)
+- Android: Missing `libwebrtc.jar`
+- Linux: Incomplete artifacts
+
+The builds appeared successful because the scripts continued after ninja failures, but now with `set -e`, failures will be properly reported.
+
+## 0.3.29 (2026-05-10)
+
+### Fixes
+
+- Fix missing `libwebrtc.jar` for Android builds, harden build scripts
+- fix race in download_webrtc to reduce flaky build - #1047 (@hechen-eng)
+- Improve WebRTC build scripts and add external_audio_source patch - #1053 (@xianshijing-lk)
+
+## 0.3.28 (2026-04-23)
+
+### Features
+
+#### Add support for frame level packet trailer
+
+##890 by @chenosaurus
+
+- Add support to attach/parse frame level timestamps & frame ID to VideoTracks as a custom payload trailer.
+- Breaking change in VideoFrame API, must include `frame_metadata` or use VideoFrame::new().
+
+### Fixes
+
+- Add NVENC check when Nvidia GPU detected - #1015 (@chenosaurus)
+
+## 0.3.27 (2026-04-02)
+
+### Features
+
+#### chore: upgrade libwebrtc to m144.
+
+##965 by @cloudwebrtc
+
+### Fixes
+
+#### use the bounded buffer for video stream
+
+##956 by @xianshijing-lk
+
+Before this PR, it uses an unbounded buffer for video stream, that will cause multiple problems:
+1, video will be lagged behind if rendering is slow or just wake up from background
+2, it will be out of sync with audio
+
+This PRs provides options to set a bounded buffer for video stream, and use 1 buffer as the default option.
+
+## 0.3.26 (2026-03-31)
+
+### Fixes
+
+- fix unity android build with "livekit" prefixed jni - #983 (@xianshijing-lk)
+
+#### fix: fix unavailable sem symbol for Linux aarch64.
+
+##975 by @cloudwebrtc
+
 ## 0.3.25 (2026-03-22)
 
 ### Fixes

@@ -22,12 +22,35 @@ Object.defineProperty(exports, "__esModule", { value: true });
 
 const { proto2 } = require("@bufbuild/protobuf");
 const { DisconnectReason, OwnedParticipant, ParticipantInfo, ParticipantPermission } = require("./participant_pb.js");
-const { OwnedTrack, OwnedTrackPublication, TrackSource } = require("./track_pb.js");
+const { OwnedTrack, OwnedTrackPublication, PacketTrailerFeature, TrackPublicationInfo, TrackSource } = require("./track_pb.js");
 const { RtcStats } = require("./stats_pb.js");
 const { VideoCodec } = require("./video_frame_pb.js");
 const { E2eeOptions, EncryptionState } = require("./e2ee_pb.js");
 const { FfiOwnedHandle } = require("./handle_pb.js");
 const { OwnedByteStreamReader, OwnedTextStreamReader } = require("./data_stream_pb.js");
+const { OwnedRemoteDataTrack } = require("./data_track_pb.js");
+
+/**
+ * Simulate a reconnection scenario for testing. Mirrors the variants of
+ * `livekit::SimulateScenario`. The Resume / FullReconnect variants are
+ * the relevant ones for verifying that resume preserves publications and
+ * full reconnect republishes them exactly once.
+ *
+ * @generated from enum livekit.proto.SimulateScenarioKind
+ */
+const SimulateScenarioKind = /*@__PURE__*/ proto2.makeEnum(
+  "livekit.proto.SimulateScenarioKind",
+  [
+    {no: 0, name: "SIMULATE_SIGNAL_RECONNECT"},
+    {no: 1, name: "SIMULATE_SPEAKER"},
+    {no: 2, name: "SIMULATE_NODE_FAILURE"},
+    {no: 3, name: "SIMULATE_SERVER_LEAVE"},
+    {no: 4, name: "SIMULATE_MIGRATION"},
+    {no: 5, name: "SIMULATE_FORCE_TCP"},
+    {no: 6, name: "SIMULATE_FORCE_TLS"},
+    {no: 7, name: "SIMULATE_FULL_RECONNECT"},
+  ],
+);
 
 /**
  * @generated from enum livekit.proto.IceTransportType
@@ -181,6 +204,39 @@ const DisconnectCallback = /*@__PURE__*/ proto2.makeMessageType(
   "livekit.proto.DisconnectCallback",
   () => [
     { no: 1, name: "async_id", kind: "scalar", T: 4 /* ScalarType.UINT64 */, req: true },
+  ],
+);
+
+/**
+ * @generated from message livekit.proto.SimulateScenarioRequest
+ */
+const SimulateScenarioRequest = /*@__PURE__*/ proto2.makeMessageType(
+  "livekit.proto.SimulateScenarioRequest",
+  () => [
+    { no: 1, name: "room_handle", kind: "scalar", T: 4 /* ScalarType.UINT64 */, req: true },
+    { no: 2, name: "scenario", kind: "enum", T: proto2.getEnumType(SimulateScenarioKind), req: true },
+    { no: 3, name: "request_async_id", kind: "scalar", T: 4 /* ScalarType.UINT64 */, opt: true },
+  ],
+);
+
+/**
+ * @generated from message livekit.proto.SimulateScenarioResponse
+ */
+const SimulateScenarioResponse = /*@__PURE__*/ proto2.makeMessageType(
+  "livekit.proto.SimulateScenarioResponse",
+  () => [
+    { no: 1, name: "async_id", kind: "scalar", T: 4 /* ScalarType.UINT64 */, req: true },
+  ],
+);
+
+/**
+ * @generated from message livekit.proto.SimulateScenarioCallback
+ */
+const SimulateScenarioCallback = /*@__PURE__*/ proto2.makeMessageType(
+  "livekit.proto.SimulateScenarioCallback",
+  () => [
+    { no: 1, name: "async_id", kind: "scalar", T: 4 /* ScalarType.UINT64 */, req: true },
+    { no: 2, name: "error", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
   ],
 );
 
@@ -640,6 +696,8 @@ const TrackPublishOptions = /*@__PURE__*/ proto2.makeMessageType(
     { no: 7, name: "source", kind: "enum", T: proto2.getEnumType(TrackSource), opt: true },
     { no: 8, name: "stream", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
     { no: 9, name: "preconnect_buffer", kind: "scalar", T: 8 /* ScalarType.BOOL */, opt: true },
+    { no: 10, name: "packet_trailer_features", kind: "enum", T: proto2.getEnumType(PacketTrailerFeature), repeated: true },
+    { no: 11, name: "scalability_mode", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
   ],
 );
 
@@ -769,6 +827,10 @@ const RoomEvent = /*@__PURE__*/ proto2.makeMessageType(
     { no: 39, name: "participant_encryption_status_changed", kind: "message", T: ParticipantEncryptionStatusChanged, oneof: "message" },
     { no: 41, name: "participant_permission_changed", kind: "message", T: ParticipantPermissionChanged, oneof: "message" },
     { no: 40, name: "token_refreshed", kind: "message", T: TokenRefreshed, oneof: "message" },
+    { no: 42, name: "participant_active", kind: "message", T: ParticipantActive, oneof: "message" },
+    { no: 43, name: "data_track_published", kind: "message", T: DataTrackPublished, oneof: "message" },
+    { no: 44, name: "data_track_unpublished", kind: "message", T: DataTrackUnpublished, oneof: "message" },
+    { no: 45, name: "local_track_republished", kind: "message", T: LocalTrackRepublished, oneof: "message" },
   ],
 );
 
@@ -825,6 +887,16 @@ const ParticipantConnected = /*@__PURE__*/ proto2.makeMessageType(
 );
 
 /**
+ * @generated from message livekit.proto.ParticipantActive
+ */
+const ParticipantActive = /*@__PURE__*/ proto2.makeMessageType(
+  "livekit.proto.ParticipantActive",
+  () => [
+    { no: 1, name: "participant_identity", kind: "scalar", T: 9 /* ScalarType.STRING */, req: true },
+  ],
+);
+
+/**
  * @generated from message livekit.proto.ParticipantDisconnected
  */
 const ParticipantDisconnected = /*@__PURE__*/ proto2.makeMessageType(
@@ -852,6 +924,26 @@ const LocalTrackUnpublished = /*@__PURE__*/ proto2.makeMessageType(
   "livekit.proto.LocalTrackUnpublished",
   () => [
     { no: 1, name: "publication_sid", kind: "scalar", T: 9 /* ScalarType.STRING */, req: true },
+  ],
+);
+
+/**
+ * Fired when the SDK auto-republishes a local track during a full
+ * reconnect. The FfiPublication handle is preserved across the cycle —
+ * language bindings should look up the existing publication object by
+ * `previous_sid` (its old SID), update its TrackPublicationInfo in place
+ * with `info`, and rekey it under the new SID. Apps holding a cached
+ * reference to the publication continue to see a valid object whose
+ * reads/writes hit current state.
+ *
+ * @generated from message livekit.proto.LocalTrackRepublished
+ */
+const LocalTrackRepublished = /*@__PURE__*/ proto2.makeMessageType(
+  "livekit.proto.LocalTrackRepublished",
+  () => [
+    { no: 1, name: "publication_handle", kind: "scalar", T: 4 /* ScalarType.UINT64 */, req: true },
+    { no: 2, name: "previous_sid", kind: "scalar", T: 9 /* ScalarType.STRING */, req: true },
+    { no: 3, name: "info", kind: "message", T: TrackPublicationInfo, req: true },
   ],
 );
 
@@ -1481,7 +1573,32 @@ const TextStreamOpened = /*@__PURE__*/ proto2.makeMessageType(
   ],
 );
 
+/**
+ * A remote participant published a data track.
+ *
+ * @generated from message livekit.proto.DataTrackPublished
+ */
+const DataTrackPublished = /*@__PURE__*/ proto2.makeMessageType(
+  "livekit.proto.DataTrackPublished",
+  () => [
+    { no: 1, name: "track", kind: "message", T: OwnedRemoteDataTrack, req: true },
+  ],
+);
 
+/**
+ * A remote participant unpublished a data track.
+ *
+ * @generated from message livekit.proto.DataTrackUnpublished
+ */
+const DataTrackUnpublished = /*@__PURE__*/ proto2.makeMessageType(
+  "livekit.proto.DataTrackUnpublished",
+  () => [
+    { no: 1, name: "sid", kind: "scalar", T: 9 /* ScalarType.STRING */, req: true },
+  ],
+);
+
+
+exports.SimulateScenarioKind = SimulateScenarioKind;
 exports.IceTransportType = IceTransportType;
 exports.ContinualGatheringPolicy = ContinualGatheringPolicy;
 exports.ConnectionQuality = ConnectionQuality;
@@ -1495,6 +1612,9 @@ exports.ConnectCallback_Result = ConnectCallback_Result;
 exports.DisconnectRequest = DisconnectRequest;
 exports.DisconnectResponse = DisconnectResponse;
 exports.DisconnectCallback = DisconnectCallback;
+exports.SimulateScenarioRequest = SimulateScenarioRequest;
+exports.SimulateScenarioResponse = SimulateScenarioResponse;
+exports.SimulateScenarioCallback = SimulateScenarioCallback;
 exports.PublishTrackRequest = PublishTrackRequest;
 exports.PublishTrackResponse = PublishTrackResponse;
 exports.PublishTrackCallback = PublishTrackCallback;
@@ -1544,9 +1664,11 @@ exports.RoomInfo = RoomInfo;
 exports.OwnedRoom = OwnedRoom;
 exports.ParticipantsUpdated = ParticipantsUpdated;
 exports.ParticipantConnected = ParticipantConnected;
+exports.ParticipantActive = ParticipantActive;
 exports.ParticipantDisconnected = ParticipantDisconnected;
 exports.LocalTrackPublished = LocalTrackPublished;
 exports.LocalTrackUnpublished = LocalTrackUnpublished;
+exports.LocalTrackRepublished = LocalTrackRepublished;
 exports.LocalTrackSubscribed = LocalTrackSubscribed;
 exports.TrackPublished = TrackPublished;
 exports.TrackUnpublished = TrackUnpublished;
@@ -1602,3 +1724,5 @@ exports.SetDataChannelBufferedAmountLowThresholdResponse = SetDataChannelBuffere
 exports.DataChannelBufferedAmountLowThresholdChanged = DataChannelBufferedAmountLowThresholdChanged;
 exports.ByteStreamOpened = ByteStreamOpened;
 exports.TextStreamOpened = TextStreamOpened;
+exports.DataTrackPublished = DataTrackPublished;
+exports.DataTrackUnpublished = DataTrackUnpublished;

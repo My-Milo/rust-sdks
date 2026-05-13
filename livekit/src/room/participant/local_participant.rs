@@ -23,7 +23,7 @@ use std::{
 };
 
 use super::{
-    ConnectionQuality, ParticipantInner, ParticipantKind, ParticipantKindDetail,
+    ConnectionQuality, ParticipantInner, ParticipantKind, ParticipantKindDetail, ParticipantState,
     ParticipantTrackPermission,
 };
 use crate::{
@@ -31,15 +31,21 @@ use crate::{
         ByteStreamInfo, ByteStreamWriter, StreamByteOptions, StreamResult, StreamTextOptions,
         TextStreamInfo, TextStreamWriter,
     },
+    data_track::{self, DataTrack, DataTrackOptions, Local},
     e2ee::EncryptionType,
     options::{self, compute_video_encodings, video_layers_from_encodings, TrackPublishOptions},
     prelude::*,
     room::participant::rpc::{RpcError, RpcErrorCode, RpcInvocationData, MAX_PAYLOAD_BYTES},
+    rtc_engine::lk_runtime::LkRuntime,
     rtc_engine::{EngineError, RtcEngine},
     ChatMessage, DataPacket, RoomSession, RpcAck, RpcRequest, RpcResponse, SipDTMF, Transcription,
 };
 use chrono::Utc;
-use libwebrtc::{native::create_random_uuid, rtp_parameters::RtpEncodingParameters};
+use libwebrtc::{
+    native::{create_random_uuid, packet_trailer},
+    rtp_parameters::RtpEncodingParameters,
+    video_source::RtcVideoSource,
+};
 use livekit_api::signal_client::SignalError;
 use livekit_protocol as proto;
 use livekit_runtime::timeout;
@@ -101,6 +107,7 @@ impl Debug for LocalParticipant {
             .field("sid", &self.sid())
             .field("identity", &self.identity())
             .field("name", &self.name())
+            .field("state", &self.state())
             .finish()
     }
 }
@@ -113,8 +120,10 @@ impl LocalParticipant {
         sid: ParticipantSid,
         identity: ParticipantIdentity,
         name: String,
+        state: ParticipantState,
         metadata: String,
         attributes: HashMap<String, String>,
+        joined_at: i64,
         encryption_type: EncryptionType,
         permission: Option<proto::ParticipantPermission>,
     ) -> Self {
@@ -124,10 +133,12 @@ impl LocalParticipant {
                 sid,
                 identity,
                 name,
+                state,
                 metadata,
                 attributes,
                 kind,
                 kind_details,
+                joined_at,
                 permission,
             ),
             local: Arc::new(LocalInfo {
@@ -249,6 +260,43 @@ impl LocalParticipant {
         vec
     }
 
+    /// Publishes a data track.
+    ///
+    /// # Returns
+    ///
+    /// The published data track if successful. Use [`LocalDataTrack::try_push`]
+    /// to send data frames on the track.
+    ///
+    /// # Examples
+    ///
+    /// Publish a track named "my_track":
+    ///
+    /// ```
+    /// # use livekit::prelude::*;
+    /// # async fn with_room(room: Room) -> Result<(), PublishError> {
+    /// let track = room
+    ///     .local_participant()
+    ///     .publish_data_track("my_track")
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// Note: if you are self-hosting the LiveKit SFU and get [`data_track::PublishError::Timeout`],
+    /// this may indicate you are using an outdated release that does not support data tracks.
+    ///
+    pub async fn publish_data_track(
+        &self,
+        options: impl Into<DataTrackOptions>,
+    ) -> Result<DataTrack<Local>, data_track::PublishError> {
+        self.session()
+            .ok_or(PublishError::Disconnected)?
+            .local_dt_input
+            .publish_track(options.into())
+            .await
+    }
+
+    /// Publishes a media track.
     pub async fn publish_track(
         &self,
         track: LocalTrack,
@@ -273,6 +321,9 @@ impl LocalParticipant {
             req.audio_features.push(proto::AudioTrackFeature::TfPreconnectBuffer as i32);
         }
 
+        req.packet_trailer_features =
+            options.packet_trailer_features.to_proto().into_iter().map(|f| f as i32).collect();
+
         let mut encodings = Vec::default();
         match &track {
             LocalTrack::Video(video_track) => {
@@ -285,8 +336,17 @@ impl LocalParticipant {
                 encodings = compute_video_encodings(req.width, req.height, &options);
                 req.layers = video_layers_from_encodings(req.width, req.height, &encodings);
 
-                // Populate simulcast_codecs so the server knows this track is simulcasted
-                if options.simulcast && encodings.len() > 1 {
+                // Populate simulcast_codecs so the server knows this track has
+                // multiple quality layers — either real simulcast (multiple
+                // RTP encodings) or SVC (one encoding with several spatial
+                // layers carried inside it).
+                let is_svc_multilayer = encodings.len() == 1
+                    && encodings
+                        .first()
+                        .and_then(|e| e.scalability_mode.as_ref())
+                        .map(|m| options::spatial_layers_from_scalability_mode(m) > 1)
+                        .unwrap_or(false);
+                if (options.simulcast && encodings.len() > 1) || is_svc_multilayer {
                     req.simulcast_codecs = vec![proto::SimulcastCodec {
                         codec: options.video_codec.as_str().to_string(),
                         cid: track.rtc_track().id(),
@@ -317,6 +377,23 @@ impl LocalParticipant {
             self.inner.rtc_engine.create_sender(track.clone(), options.clone(), encodings).await?;
 
         track.set_transceiver(Some(transceiver));
+
+        if !options.packet_trailer_features.is_empty() {
+            if let LocalTrack::Video(video_track) = &track {
+                log::info!("packet_trailer enabled for local video track {}", publication.sid(),);
+                let sender = track.transceiver().unwrap().sender();
+                let handler = packet_trailer::create_sender_handler(
+                    LkRuntime::instance().pc_factory(),
+                    &sender,
+                );
+                video_track.set_packet_trailer_handler(handler.clone());
+
+                #[cfg(not(target_arch = "wasm32"))]
+                if let RtcVideoSource::Native(ref native_source) = video_track.rtc_source() {
+                    native_source.set_packet_trailer_handler(handler.clone());
+                }
+            }
+        }
 
         self.inner.rtc_engine.publisher_negotiation_needed();
 
@@ -515,6 +592,7 @@ impl LocalParticipant {
         self.inner.rtc_engine.publish_data(packet, kind, true).await.map_err(Into::into)
     }
 
+    /// Publishes a data packet.
     pub async fn publish_data(&self, packet: DataPacket) -> RoomResult<()> {
         let kind = match packet.reliable {
             true => DataPacketKind::Reliable,
@@ -726,6 +804,10 @@ impl LocalParticipant {
         self.inner.info.read().name.clone()
     }
 
+    pub fn state(&self) -> ParticipantState {
+        self.inner.info.read().state
+    }
+
     pub fn metadata(&self) -> String {
         self.inner.info.read().metadata.clone()
     }
@@ -772,6 +854,10 @@ impl LocalParticipant {
 
     pub fn disconnect_reason(&self) -> DisconnectReason {
         self.inner.info.read().disconnect_reason
+    }
+
+    pub fn joined_at(&self) -> i64 {
+        self.inner.info.read().joined_at
     }
 
     pub fn permission(&self) -> Option<proto::ParticipantPermission> {

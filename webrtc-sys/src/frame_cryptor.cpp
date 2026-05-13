@@ -22,11 +22,60 @@
 #include "api/make_ref_counted.h"
 #include "livekit/peer_connection.h"
 #include "livekit/peer_connection_factory.h"
+#include "livekit/packet_trailer.h"
 #include "livekit/webrtc.h"
 #include "rtc_base/thread.h"
 #include "webrtc-sys/src/frame_cryptor.rs.h"
 
 namespace livekit_ffi {
+
+class ChainedFrameTransformer : public webrtc::FrameTransformerInterface,
+                                public webrtc::TransformedFrameCallback {
+ public:
+  ChainedFrameTransformer(
+      webrtc::scoped_refptr<webrtc::FrameTransformerInterface> first,
+      webrtc::scoped_refptr<webrtc::FrameTransformerInterface> second)
+      : first_(std::move(first)), second_(std::move(second)) {}
+
+  void Transform(
+      std::unique_ptr<webrtc::TransformableFrameInterface> frame) override {
+    first_->Transform(std::move(frame));
+  }
+
+  void RegisterTransformedFrameCallback(
+      webrtc::scoped_refptr<webrtc::TransformedFrameCallback> callback) override {
+    second_->RegisterTransformedFrameCallback(callback);
+    first_->RegisterTransformedFrameCallback(
+        webrtc::scoped_refptr<webrtc::TransformedFrameCallback>(this));
+  }
+
+  void RegisterTransformedFrameSinkCallback(
+      webrtc::scoped_refptr<webrtc::TransformedFrameCallback> callback,
+      uint32_t ssrc) override {
+    second_->RegisterTransformedFrameSinkCallback(callback, ssrc);
+    first_->RegisterTransformedFrameSinkCallback(
+        webrtc::scoped_refptr<webrtc::TransformedFrameCallback>(this), ssrc);
+  }
+
+  void UnregisterTransformedFrameCallback() override {
+    first_->UnregisterTransformedFrameCallback();
+    second_->UnregisterTransformedFrameCallback();
+  }
+
+  void UnregisterTransformedFrameSinkCallback(uint32_t ssrc) override {
+    first_->UnregisterTransformedFrameSinkCallback(ssrc);
+    second_->UnregisterTransformedFrameSinkCallback(ssrc);
+  }
+
+  void OnTransformedFrame(
+      std::unique_ptr<webrtc::TransformableFrameInterface> frame) override {
+    second_->Transform(std::move(frame));
+  }
+
+ private:
+  webrtc::scoped_refptr<webrtc::FrameTransformerInterface> first_;
+  webrtc::scoped_refptr<webrtc::FrameTransformerInterface> second_;
+};
 
 webrtc::FrameCryptorTransformer::Algorithm AlgorithmToFrameCryptorAlgorithm(
     Algorithm algorithm) {
@@ -69,15 +118,15 @@ KeyProvider::KeyProvider(KeyProviderOptions options) {
       KeyDerivationAlgorithmToFrameCryptorKeyDerivationAlgorithm(
           options.key_derivation_algorithm);
   impl_ =
-      new rtc::RefCountedObject<webrtc::DefaultKeyProviderImpl>(rtc_options);
+      new webrtc::RefCountedObject<webrtc::DefaultKeyProviderImpl>(rtc_options);
 }
 
 FrameCryptor::FrameCryptor(
     std::shared_ptr<RtcRuntime> rtc_runtime,
     const std::string participant_id,
     webrtc::FrameCryptorTransformer::Algorithm algorithm,
-    rtc::scoped_refptr<webrtc::KeyProvider> key_provider,
-    rtc::scoped_refptr<webrtc::RtpSenderInterface> sender)
+    webrtc::scoped_refptr<webrtc::KeyProvider> key_provider,
+    webrtc::scoped_refptr<webrtc::RtpSenderInterface> sender)
     : rtc_runtime_(rtc_runtime),
       participant_id_(participant_id),
       key_provider_(key_provider),
@@ -86,7 +135,7 @@ FrameCryptor::FrameCryptor(
       sender->track()->kind() == "audio"
           ? webrtc::FrameCryptorTransformer::MediaType::kAudioFrame
           : webrtc::FrameCryptorTransformer::MediaType::kVideoFrame;
-  e2ee_transformer_ = rtc::scoped_refptr<webrtc::FrameCryptorTransformer>(
+  e2ee_transformer_ = webrtc::scoped_refptr<webrtc::FrameCryptorTransformer>(
       new webrtc::FrameCryptorTransformer(rtc_runtime->signaling_thread(),
                                           participant_id, mediaType, algorithm,
                                           key_provider_));
@@ -98,8 +147,8 @@ FrameCryptor::FrameCryptor(
     std::shared_ptr<RtcRuntime> rtc_runtime,
     const std::string participant_id,
     webrtc::FrameCryptorTransformer::Algorithm algorithm,
-    rtc::scoped_refptr<webrtc::KeyProvider> key_provider,
-    rtc::scoped_refptr<webrtc::RtpReceiverInterface> receiver)
+    webrtc::scoped_refptr<webrtc::KeyProvider> key_provider,
+    webrtc::scoped_refptr<webrtc::RtpReceiverInterface> receiver)
     : rtc_runtime_(rtc_runtime),
       participant_id_(participant_id),
       key_provider_(key_provider),
@@ -108,7 +157,7 @@ FrameCryptor::FrameCryptor(
       receiver->track()->kind() == "audio"
           ? webrtc::FrameCryptorTransformer::MediaType::kAudioFrame
           : webrtc::FrameCryptorTransformer::MediaType::kVideoFrame;
-  e2ee_transformer_ = rtc::scoped_refptr<webrtc::FrameCryptorTransformer>(
+  e2ee_transformer_ = webrtc::scoped_refptr<webrtc::FrameCryptorTransformer>(
       new webrtc::FrameCryptorTransformer(rtc_runtime->signaling_thread(),
                                           participant_id, mediaType, algorithm,
                                           key_provider_));
@@ -125,7 +174,7 @@ FrameCryptor::~FrameCryptor() {
 void FrameCryptor::register_observer(
     rust::Box<RtcFrameCryptorObserverWrapper> observer) const {
   webrtc::MutexLock lock(&mutex_);
-  observer_ = rtc::make_ref_counted<NativeFrameCryptorObserver>(
+  observer_ = webrtc::make_ref_counted<NativeFrameCryptorObserver>(
       std::move(observer), this);
   e2ee_transformer_->RegisterFrameCryptorTransformerObserver(observer_);
 }
@@ -134,6 +183,40 @@ void FrameCryptor::unregister_observer() const {
   webrtc::MutexLock lock(&mutex_);
   observer_ = nullptr;
   e2ee_transformer_->UnRegisterFrameCryptorTransformerObserver();
+}
+
+void FrameCryptor::set_packet_trailer_handler(
+    std::shared_ptr<PacketTrailerHandler> handler) const {
+  if (!handler) {
+    return;
+  }
+
+  auto timestamp_transformer = handler->transformer();
+  if (!timestamp_transformer) {
+    return;
+  }
+
+  webrtc::scoped_refptr<webrtc::FrameTransformerInterface> first;
+  webrtc::scoped_refptr<webrtc::FrameTransformerInterface> second;
+  if (sender_) {
+    first = e2ee_transformer_;
+    second = timestamp_transformer;
+  } else if (receiver_) {
+    first = timestamp_transformer;
+    second = e2ee_transformer_;
+  } else {
+    return;
+  }
+
+  chained_transformer_ =
+      webrtc::make_ref_counted<ChainedFrameTransformer>(first, second);
+
+  if (sender_) {
+    sender_->SetEncoderToPacketizerFrameTransformer(chained_transformer_);
+  }
+  if (receiver_) {
+    receiver_->SetDepacketizerToDecoderFrameTransformer(chained_transformer_);
+  }
 }
 
 NativeFrameCryptorObserver::NativeFrameCryptorObserver(

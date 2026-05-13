@@ -96,6 +96,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Update protocol and add SendDataRequest nonce
+## 0.4.21 (2026-05-11)
+
+### Fixes
+
+- Upgrade protocol to v1.45.8
+
+## 0.4.20 (2026-05-10)
+
+### Features
+
+- Bump `rustls-webpki` to 0.103.13, addressing [GHSA-82j2-j2ch-gfr8](https://github.com/advisories/GHSA-82j2-j2ch-gfr8)
+
+### Fixes
+
+- fix(signal-client): carry access token on validate() fallback - #1044 (@abhisheksingh-R41)
+- Add advertising of SDK client capabilities - #1022 (@chenosaurus)
+
+## 0.4.19 (2026-04-23)
+
+### Features
+
+#### Add support for frame level packet trailer
+
+##890 by @chenosaurus
+
+- Add support to attach/parse frame level timestamps & frame ID to VideoTracks as a custom payload trailer.
+- Breaking change in VideoFrame API, must include `frame_metadata` or use VideoFrame::new().
+
+### Fixes
+
+- Add device-info crate and send device_info to telemetry - #982 (@maxheimbrock)
+
+## 0.4.18 (2026-04-02)
+
+### Fixes
+
+#### use the bounded buffer for video stream
+
+##956 by @xianshijing-lk
+
+Before this PR, it uses an unbounded buffer for video stream, that will cause multiple problems:
+1, video will be lagged behind if rendering is slow or just wake up from background
+2, it will be out of sync with audio
+
+This PRs provides options to set a bounded buffer for video stream, and use 1 buffer as the default option.
+
+## 0.4.17 (2026-03-31)
+
+### Fixes
+
+- Fix clippy warnings in livekit-api and build.rs
+- Upgrade to thiserror 2
+
 ## 0.4.16 (2026-03-22)
 
 ### Fixes

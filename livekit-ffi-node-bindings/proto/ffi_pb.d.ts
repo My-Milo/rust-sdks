@@ -19,7 +19,7 @@
 
 import type { BinaryReadOptions, FieldList, JsonReadOptions, JsonValue, PartialMessage, PlainMessage } from "@bufbuild/protobuf";
 import { Message, proto2 } from "@bufbuild/protobuf";
-import type { ConnectCallback, ConnectRequest, ConnectResponse, DisconnectCallback, DisconnectRequest, DisconnectResponse, EditChatMessageRequest, GetSessionStatsCallback, GetSessionStatsRequest, GetSessionStatsResponse, PublishDataCallback, PublishDataRequest, PublishDataResponse, PublishSipDtmfCallback, PublishSipDtmfRequest, PublishSipDtmfResponse, PublishTrackCallback, PublishTrackRequest, PublishTrackResponse, PublishTranscriptionCallback, PublishTranscriptionRequest, PublishTranscriptionResponse, RoomEvent, SendChatMessageCallback, SendChatMessageRequest, SendChatMessageResponse, SendStreamChunkCallback, SendStreamChunkRequest, SendStreamChunkResponse, SendStreamHeaderCallback, SendStreamHeaderRequest, SendStreamHeaderResponse, SendStreamTrailerCallback, SendStreamTrailerRequest, SendStreamTrailerResponse, SetDataChannelBufferedAmountLowThresholdRequest, SetDataChannelBufferedAmountLowThresholdResponse, SetLocalAttributesCallback, SetLocalAttributesRequest, SetLocalAttributesResponse, SetLocalMetadataCallback, SetLocalMetadataRequest, SetLocalMetadataResponse, SetLocalNameCallback, SetLocalNameRequest, SetLocalNameResponse, SetSubscribedRequest, SetSubscribedResponse, UnpublishTrackCallback, UnpublishTrackRequest, UnpublishTrackResponse } from "./room_pb.js";
+import type { ConnectCallback, ConnectRequest, ConnectResponse, DisconnectCallback, DisconnectRequest, DisconnectResponse, EditChatMessageRequest, GetSessionStatsCallback, GetSessionStatsRequest, GetSessionStatsResponse, PublishDataCallback, PublishDataRequest, PublishDataResponse, PublishSipDtmfCallback, PublishSipDtmfRequest, PublishSipDtmfResponse, PublishTrackCallback, PublishTrackRequest, PublishTrackResponse, PublishTranscriptionCallback, PublishTranscriptionRequest, PublishTranscriptionResponse, RoomEvent, SendChatMessageCallback, SendChatMessageRequest, SendChatMessageResponse, SendStreamChunkCallback, SendStreamChunkRequest, SendStreamChunkResponse, SendStreamHeaderCallback, SendStreamHeaderRequest, SendStreamHeaderResponse, SendStreamTrailerCallback, SendStreamTrailerRequest, SendStreamTrailerResponse, SetDataChannelBufferedAmountLowThresholdRequest, SetDataChannelBufferedAmountLowThresholdResponse, SetLocalAttributesCallback, SetLocalAttributesRequest, SetLocalAttributesResponse, SetLocalMetadataCallback, SetLocalMetadataRequest, SetLocalMetadataResponse, SetLocalNameCallback, SetLocalNameRequest, SetLocalNameResponse, SetSubscribedRequest, SetSubscribedResponse, SimulateScenarioCallback, SimulateScenarioRequest, SimulateScenarioResponse, UnpublishTrackCallback, UnpublishTrackRequest, UnpublishTrackResponse } from "./room_pb.js";
 import type { CreateAudioTrackRequest, CreateAudioTrackResponse, CreateVideoTrackRequest, CreateVideoTrackResponse, EnableRemoteTrackRequest, EnableRemoteTrackResponse, GetStatsCallback, GetStatsRequest, GetStatsResponse, LocalTrackMuteRequest, LocalTrackMuteResponse, SetTrackSubscriptionPermissionsRequest, SetTrackSubscriptionPermissionsResponse, TrackEvent } from "./track_pb.js";
 import type { CaptureVideoFrameRequest, CaptureVideoFrameResponse, NewVideoSourceRequest, NewVideoSourceResponse, NewVideoStreamRequest, NewVideoStreamResponse, VideoConvertRequest, VideoConvertResponse, VideoStreamEvent, VideoStreamFromParticipantRequest, VideoStreamFromParticipantResponse } from "./video_frame_pb.js";
 import type { ApmProcessReverseStreamRequest, ApmProcessReverseStreamResponse, ApmProcessStreamRequest, ApmProcessStreamResponse, ApmSetStreamDelayRequest, ApmSetStreamDelayResponse, AudioStreamEvent, AudioStreamFromParticipantRequest, AudioStreamFromParticipantResponse, CaptureAudioFrameCallback, CaptureAudioFrameRequest, CaptureAudioFrameResponse, ClearAudioBufferRequest, ClearAudioBufferResponse, FlushSoxResamplerRequest, FlushSoxResamplerResponse, LoadAudioFilterPluginRequest, LoadAudioFilterPluginResponse, NewApmRequest, NewApmResponse, NewAudioResamplerRequest, NewAudioResamplerResponse, NewAudioSourceRequest, NewAudioSourceResponse, NewAudioStreamRequest, NewAudioStreamResponse, NewSoxResamplerRequest, NewSoxResamplerResponse, PushSoxResamplerRequest, PushSoxResamplerResponse, RemixAndResampleRequest, RemixAndResampleResponse } from "./audio_frame_pb.js";
@@ -27,6 +27,7 @@ import type { E2eeRequest, E2eeResponse } from "./e2ee_pb.js";
 import type { PerformRpcCallback, PerformRpcRequest, PerformRpcResponse, RegisterRpcMethodRequest, RegisterRpcMethodResponse, RpcMethodInvocationEvent, RpcMethodInvocationResponseRequest, RpcMethodInvocationResponseResponse, UnregisterRpcMethodRequest, UnregisterRpcMethodResponse } from "./rpc_pb.js";
 import type { EnableRemoteTrackPublicationRequest, EnableRemoteTrackPublicationResponse, SetRemoteTrackPublicationQualityRequest, SetRemoteTrackPublicationQualityResponse, UpdateRemoteTrackPublicationDimensionRequest, UpdateRemoteTrackPublicationDimensionResponse } from "./track_publication_pb.js";
 import type { ByteStreamOpenCallback, ByteStreamOpenRequest, ByteStreamOpenResponse, ByteStreamReaderEvent, ByteStreamReaderReadAllCallback, ByteStreamReaderReadAllRequest, ByteStreamReaderReadAllResponse, ByteStreamReaderReadIncrementalRequest, ByteStreamReaderReadIncrementalResponse, ByteStreamReaderWriteToFileCallback, ByteStreamReaderWriteToFileRequest, ByteStreamReaderWriteToFileResponse, ByteStreamWriterCloseCallback, ByteStreamWriterCloseRequest, ByteStreamWriterCloseResponse, ByteStreamWriterWriteCallback, ByteStreamWriterWriteRequest, ByteStreamWriterWriteResponse, StreamSendBytesCallback, StreamSendBytesRequest, StreamSendBytesResponse, StreamSendFileCallback, StreamSendFileRequest, StreamSendFileResponse, StreamSendTextCallback, StreamSendTextRequest, StreamSendTextResponse, TextStreamOpenCallback, TextStreamOpenRequest, TextStreamOpenResponse, TextStreamReaderEvent, TextStreamReaderReadAllCallback, TextStreamReaderReadAllRequest, TextStreamReaderReadAllResponse, TextStreamReaderReadIncrementalRequest, TextStreamReaderReadIncrementalResponse, TextStreamWriterCloseCallback, TextStreamWriterCloseRequest, TextStreamWriterCloseResponse, TextStreamWriterWriteCallback, TextStreamWriterWriteRequest, TextStreamWriterWriteResponse } from "./data_stream_pb.js";
+import type { DataTrackStreamEvent, DataTrackStreamReadRequest, DataTrackStreamReadResponse, LocalDataTrackIsPublishedRequest, LocalDataTrackIsPublishedResponse, LocalDataTrackTryPushRequest, LocalDataTrackTryPushResponse, LocalDataTrackUnpublishRequest, LocalDataTrackUnpublishResponse, PublishDataTrackCallback, PublishDataTrackRequest, PublishDataTrackResponse, RemoteDataTrackIsPublishedRequest, RemoteDataTrackIsPublishedResponse, SubscribeDataTrackRequest, SubscribeDataTrackResponse } from "./data_track_pb.js";
 
 /**
  * @generated from enum livekit.proto.LogLevel
@@ -490,6 +491,60 @@ export declare class FfiRequest extends Message<FfiRequest> {
      */
     value: SetRemoteTrackPublicationQualityRequest;
     case: "setRemoteTrackPublicationQuality";
+  } | {
+    /**
+     * Data Track (local)
+     *
+     * @generated from field: livekit.proto.PublishDataTrackRequest publish_data_track = 69;
+     */
+    value: PublishDataTrackRequest;
+    case: "publishDataTrack";
+  } | {
+    /**
+     * @generated from field: livekit.proto.LocalDataTrackTryPushRequest local_data_track_try_push = 70;
+     */
+    value: LocalDataTrackTryPushRequest;
+    case: "localDataTrackTryPush";
+  } | {
+    /**
+     * @generated from field: livekit.proto.LocalDataTrackUnpublishRequest local_data_track_unpublish = 71;
+     */
+    value: LocalDataTrackUnpublishRequest;
+    case: "localDataTrackUnpublish";
+  } | {
+    /**
+     * @generated from field: livekit.proto.LocalDataTrackIsPublishedRequest local_data_track_is_published = 72;
+     */
+    value: LocalDataTrackIsPublishedRequest;
+    case: "localDataTrackIsPublished";
+  } | {
+    /**
+     * Data Track (remote)
+     *
+     * @generated from field: livekit.proto.SubscribeDataTrackRequest subscribe_data_track = 73;
+     */
+    value: SubscribeDataTrackRequest;
+    case: "subscribeDataTrack";
+  } | {
+    /**
+     * @generated from field: livekit.proto.RemoteDataTrackIsPublishedRequest remote_data_track_is_published = 74;
+     */
+    value: RemoteDataTrackIsPublishedRequest;
+    case: "remoteDataTrackIsPublished";
+  } | {
+    /**
+     * @generated from field: livekit.proto.DataTrackStreamReadRequest data_track_stream_read = 75;
+     */
+    value: DataTrackStreamReadRequest;
+    case: "dataTrackStreamRead";
+  } | {
+    /**
+     * Reconnection / chaos testing
+     *
+     * @generated from field: livekit.proto.SimulateScenarioRequest simulate_scenario = 76;
+     */
+    value: SimulateScenarioRequest;
+    case: "simulateScenario";
   } | { case: undefined; value?: undefined };
 
   constructor(data?: PartialMessage<FfiRequest>);
@@ -932,6 +987,60 @@ export declare class FfiResponse extends Message<FfiResponse> {
      */
     value: SetRemoteTrackPublicationQualityResponse;
     case: "setRemoteTrackPublicationQuality";
+  } | {
+    /**
+     * Data Track (local)
+     *
+     * @generated from field: livekit.proto.PublishDataTrackResponse publish_data_track = 68;
+     */
+    value: PublishDataTrackResponse;
+    case: "publishDataTrack";
+  } | {
+    /**
+     * @generated from field: livekit.proto.LocalDataTrackTryPushResponse local_data_track_try_push = 69;
+     */
+    value: LocalDataTrackTryPushResponse;
+    case: "localDataTrackTryPush";
+  } | {
+    /**
+     * @generated from field: livekit.proto.LocalDataTrackUnpublishResponse local_data_track_unpublish = 70;
+     */
+    value: LocalDataTrackUnpublishResponse;
+    case: "localDataTrackUnpublish";
+  } | {
+    /**
+     * @generated from field: livekit.proto.LocalDataTrackIsPublishedResponse local_data_track_is_published = 71;
+     */
+    value: LocalDataTrackIsPublishedResponse;
+    case: "localDataTrackIsPublished";
+  } | {
+    /**
+     * Data Track (remote)
+     *
+     * @generated from field: livekit.proto.SubscribeDataTrackResponse subscribe_data_track = 72;
+     */
+    value: SubscribeDataTrackResponse;
+    case: "subscribeDataTrack";
+  } | {
+    /**
+     * @generated from field: livekit.proto.RemoteDataTrackIsPublishedResponse remote_data_track_is_published = 73;
+     */
+    value: RemoteDataTrackIsPublishedResponse;
+    case: "remoteDataTrackIsPublished";
+  } | {
+    /**
+     * @generated from field: livekit.proto.DataTrackStreamReadResponse data_track_stream_read = 74;
+     */
+    value: DataTrackStreamReadResponse;
+    case: "dataTrackStreamRead";
+  } | {
+    /**
+     * Reconnection / chaos testing
+     *
+     * @generated from field: livekit.proto.SimulateScenarioResponse simulate_scenario = 75;
+     */
+    value: SimulateScenarioResponse;
+    case: "simulateScenario";
   } | { case: undefined; value?: undefined };
 
   constructor(data?: PartialMessage<FfiResponse>);
@@ -1204,6 +1313,28 @@ export declare class FfiEvent extends Message<FfiEvent> {
      */
     value: StreamSendBytesCallback;
     case: "sendBytes";
+  } | {
+    /**
+     * Data Track (local)
+     *
+     * @generated from field: livekit.proto.PublishDataTrackCallback publish_data_track = 42;
+     */
+    value: PublishDataTrackCallback;
+    case: "publishDataTrack";
+  } | {
+    /**
+     * Data Track (remote)
+     *
+     * @generated from field: livekit.proto.DataTrackStreamEvent data_track_stream_event = 43;
+     */
+    value: DataTrackStreamEvent;
+    case: "dataTrackStreamEvent";
+  } | {
+    /**
+     * @generated from field: livekit.proto.SimulateScenarioCallback simulate_scenario = 44;
+     */
+    value: SimulateScenarioCallback;
+    case: "simulateScenario";
   } | { case: undefined; value?: undefined };
 
   constructor(data?: PartialMessage<FfiEvent>);
