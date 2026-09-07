@@ -20,12 +20,68 @@
 import type { BinaryReadOptions, FieldList, JsonReadOptions, JsonValue, PartialMessage, PlainMessage } from "@bufbuild/protobuf";
 import { Message, proto2 } from "@bufbuild/protobuf";
 import type { DisconnectReason, OwnedParticipant, ParticipantInfo, ParticipantPermission } from "./participant_pb.js";
-import type { OwnedTrack, OwnedTrackPublication, TrackSource } from "./track_pb.js";
+import type { OwnedTrack, OwnedTrackPublication, PacketTrailerFeature, TrackPublicationInfo, TrackSource } from "./track_pb.js";
 import type { RtcStats } from "./stats_pb.js";
 import type { VideoCodec } from "./video_frame_pb.js";
 import type { E2eeOptions, EncryptionState } from "./e2ee_pb.js";
 import type { FfiOwnedHandle } from "./handle_pb.js";
 import type { OwnedByteStreamReader, OwnedTextStreamReader } from "./data_stream_pb.js";
+import type { OwnedRemoteDataTrack } from "./data_track_pb.js";
+
+/**
+ * Simulate a reconnection scenario for testing. Mirrors the variants of
+ * `livekit::SimulateScenario`. The Resume / FullReconnect variants are
+ * the relevant ones for verifying that resume preserves publications and
+ * full reconnect republishes them exactly once.
+ *
+ * @generated from enum livekit.proto.SimulateScenarioKind
+ */
+export declare enum SimulateScenarioKind {
+  /**
+   * Closes the signal channel locally; engine attempts a Resume.
+   *
+   * @generated from enum value: SIMULATE_SIGNAL_RECONNECT = 0;
+   */
+  SIMULATE_SIGNAL_RECONNECT = 0,
+
+  /**
+   * @generated from enum value: SIMULATE_SPEAKER = 1;
+   */
+  SIMULATE_SPEAKER = 1,
+
+  /**
+   * @generated from enum value: SIMULATE_NODE_FAILURE = 2;
+   */
+  SIMULATE_NODE_FAILURE = 2,
+
+  /**
+   * @generated from enum value: SIMULATE_SERVER_LEAVE = 3;
+   */
+  SIMULATE_SERVER_LEAVE = 3,
+
+  /**
+   * @generated from enum value: SIMULATE_MIGRATION = 4;
+   */
+  SIMULATE_MIGRATION = 4,
+
+  /**
+   * @generated from enum value: SIMULATE_FORCE_TCP = 5;
+   */
+  SIMULATE_FORCE_TCP = 5,
+
+  /**
+   * @generated from enum value: SIMULATE_FORCE_TLS = 6;
+   */
+  SIMULATE_FORCE_TLS = 6,
+
+  /**
+   * Asks the server to send `LeaveRequest{Reconnect}`, forcing a full
+   * reconnect (new RtcSession; SDK republishes existing local tracks).
+   *
+   * @generated from enum value: SIMULATE_FULL_RECONNECT = 7;
+   */
+  SIMULATE_FULL_RECONNECT = 7,
+}
 
 /**
  * @generated from enum livekit.proto.IceTransportType
@@ -310,6 +366,11 @@ export declare class DisconnectRequest extends Message<DisconnectRequest> {
    */
   requestAsyncId?: bigint;
 
+  /**
+   * @generated from field: optional livekit.proto.DisconnectReason reason = 3;
+   */
+  reason?: DisconnectReason;
+
   constructor(data?: PartialMessage<DisconnectRequest>);
 
   static readonly runtime: typeof proto2;
@@ -371,6 +432,93 @@ export declare class DisconnectCallback extends Message<DisconnectCallback> {
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): DisconnectCallback;
 
   static equals(a: DisconnectCallback | PlainMessage<DisconnectCallback> | undefined, b: DisconnectCallback | PlainMessage<DisconnectCallback> | undefined): boolean;
+}
+
+/**
+ * @generated from message livekit.proto.SimulateScenarioRequest
+ */
+export declare class SimulateScenarioRequest extends Message<SimulateScenarioRequest> {
+  /**
+   * @generated from field: required uint64 room_handle = 1;
+   */
+  roomHandle?: bigint;
+
+  /**
+   * @generated from field: required livekit.proto.SimulateScenarioKind scenario = 2;
+   */
+  scenario?: SimulateScenarioKind;
+
+  /**
+   * @generated from field: optional uint64 request_async_id = 3;
+   */
+  requestAsyncId?: bigint;
+
+  constructor(data?: PartialMessage<SimulateScenarioRequest>);
+
+  static readonly runtime: typeof proto2;
+  static readonly typeName = "livekit.proto.SimulateScenarioRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SimulateScenarioRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SimulateScenarioRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SimulateScenarioRequest;
+
+  static equals(a: SimulateScenarioRequest | PlainMessage<SimulateScenarioRequest> | undefined, b: SimulateScenarioRequest | PlainMessage<SimulateScenarioRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message livekit.proto.SimulateScenarioResponse
+ */
+export declare class SimulateScenarioResponse extends Message<SimulateScenarioResponse> {
+  /**
+   * @generated from field: required uint64 async_id = 1;
+   */
+  asyncId?: bigint;
+
+  constructor(data?: PartialMessage<SimulateScenarioResponse>);
+
+  static readonly runtime: typeof proto2;
+  static readonly typeName = "livekit.proto.SimulateScenarioResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SimulateScenarioResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SimulateScenarioResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SimulateScenarioResponse;
+
+  static equals(a: SimulateScenarioResponse | PlainMessage<SimulateScenarioResponse> | undefined, b: SimulateScenarioResponse | PlainMessage<SimulateScenarioResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message livekit.proto.SimulateScenarioCallback
+ */
+export declare class SimulateScenarioCallback extends Message<SimulateScenarioCallback> {
+  /**
+   * @generated from field: required uint64 async_id = 1;
+   */
+  asyncId?: bigint;
+
+  /**
+   * @generated from field: optional string error = 2;
+   */
+  error?: string;
+
+  constructor(data?: PartialMessage<SimulateScenarioCallback>);
+
+  static readonly runtime: typeof proto2;
+  static readonly typeName = "livekit.proto.SimulateScenarioCallback";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SimulateScenarioCallback;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SimulateScenarioCallback;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SimulateScenarioCallback;
+
+  static equals(a: SimulateScenarioCallback | PlainMessage<SimulateScenarioCallback> | undefined, b: SimulateScenarioCallback | PlainMessage<SimulateScenarioCallback> | undefined): boolean;
 }
 
 /**
@@ -1617,6 +1765,20 @@ export declare class TrackPublishOptions extends Message<TrackPublishOptions> {
    */
   preconnectBuffer?: boolean;
 
+  /**
+   * @generated from field: repeated livekit.proto.PacketTrailerFeature packet_trailer_features = 10;
+   */
+  packetTrailerFeatures: PacketTrailerFeature[];
+
+  /**
+   * RTP scalability mode (e.g. "L3T3_KEY"). When set, a single RTP
+   * encoding is produced with this mode, enabling true SVC for codecs
+   * that support it (VP9, AV1). Has no effect for VP8/H264.
+   *
+   * @generated from field: optional string scalability_mode = 11;
+   */
+  scalabilityMode?: string;
+
   constructor(data?: PartialMessage<TrackPublishOptions>);
 
   static readonly runtime: typeof proto2;
@@ -1743,6 +1905,20 @@ export declare class RoomOptions extends Message<RoomOptions> {
    * @generated from field: optional livekit.proto.E2eeOptions encryption = 7;
    */
   encryption?: E2eeOptions;
+
+  /**
+   * use single peer connection for both publish/subscribe (default: false)
+   *
+   * @generated from field: optional bool single_peer_connection = 8;
+   */
+  singlePeerConnection?: boolean;
+
+  /**
+   * timeout in milliseconds for each signal connection attempt (default: 5000)
+   *
+   * @generated from field: optional uint64 connect_timeout_ms = 9;
+   */
+  connectTimeoutMs?: bigint;
 
   constructor(data?: PartialMessage<RoomOptions>);
 
@@ -2132,6 +2308,30 @@ export declare class RoomEvent extends Message<RoomEvent> {
      */
     value: TokenRefreshed;
     case: "tokenRefreshed";
+  } | {
+    /**
+     * @generated from field: livekit.proto.ParticipantActive participant_active = 42;
+     */
+    value: ParticipantActive;
+    case: "participantActive";
+  } | {
+    /**
+     * @generated from field: livekit.proto.DataTrackPublished data_track_published = 43;
+     */
+    value: DataTrackPublished;
+    case: "dataTrackPublished";
+  } | {
+    /**
+     * @generated from field: livekit.proto.DataTrackUnpublished data_track_unpublished = 44;
+     */
+    value: DataTrackUnpublished;
+    case: "dataTrackUnpublished";
+  } | {
+    /**
+     * @generated from field: livekit.proto.LocalTrackRepublished local_track_republished = 45;
+     */
+    value: LocalTrackRepublished;
+    case: "localTrackRepublished";
   } | { case: undefined; value?: undefined };
 
   constructor(data?: PartialMessage<RoomEvent>);
@@ -2306,6 +2506,30 @@ export declare class ParticipantConnected extends Message<ParticipantConnected> 
 }
 
 /**
+ * @generated from message livekit.proto.ParticipantActive
+ */
+export declare class ParticipantActive extends Message<ParticipantActive> {
+  /**
+   * @generated from field: required string participant_identity = 1;
+   */
+  participantIdentity?: string;
+
+  constructor(data?: PartialMessage<ParticipantActive>);
+
+  static readonly runtime: typeof proto2;
+  static readonly typeName = "livekit.proto.ParticipantActive";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ParticipantActive;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ParticipantActive;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ParticipantActive;
+
+  static equals(a: ParticipantActive | PlainMessage<ParticipantActive> | undefined, b: ParticipantActive | PlainMessage<ParticipantActive> | undefined): boolean;
+}
+
+/**
  * @generated from message livekit.proto.ParticipantDisconnected
  */
 export declare class ParticipantDisconnected extends Message<ParticipantDisconnected> {
@@ -2383,6 +2607,48 @@ export declare class LocalTrackUnpublished extends Message<LocalTrackUnpublished
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): LocalTrackUnpublished;
 
   static equals(a: LocalTrackUnpublished | PlainMessage<LocalTrackUnpublished> | undefined, b: LocalTrackUnpublished | PlainMessage<LocalTrackUnpublished> | undefined): boolean;
+}
+
+/**
+ * Fired when the SDK auto-republishes a local track during a full
+ * reconnect. The FfiPublication handle is preserved across the cycle —
+ * language bindings should look up the existing publication object by
+ * `previous_sid` (its old SID), update its TrackPublicationInfo in place
+ * with `info`, and rekey it under the new SID. Apps holding a cached
+ * reference to the publication continue to see a valid object whose
+ * reads/writes hit current state.
+ *
+ * @generated from message livekit.proto.LocalTrackRepublished
+ */
+export declare class LocalTrackRepublished extends Message<LocalTrackRepublished> {
+  /**
+   * @generated from field: required uint64 publication_handle = 1;
+   */
+  publicationHandle?: bigint;
+
+  /**
+   * @generated from field: required string previous_sid = 2;
+   */
+  previousSid?: string;
+
+  /**
+   * @generated from field: required livekit.proto.TrackPublicationInfo info = 3;
+   */
+  info?: TrackPublicationInfo;
+
+  constructor(data?: PartialMessage<LocalTrackRepublished>);
+
+  static readonly runtime: typeof proto2;
+  static readonly typeName = "livekit.proto.LocalTrackRepublished";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): LocalTrackRepublished;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): LocalTrackRepublished;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): LocalTrackRepublished;
+
+  static equals(a: LocalTrackRepublished | PlainMessage<LocalTrackRepublished> | undefined, b: LocalTrackRepublished | PlainMessage<LocalTrackRepublished> | undefined): boolean;
 }
 
 /**
@@ -4082,5 +4348,59 @@ export declare class TextStreamOpened extends Message<TextStreamOpened> {
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): TextStreamOpened;
 
   static equals(a: TextStreamOpened | PlainMessage<TextStreamOpened> | undefined, b: TextStreamOpened | PlainMessage<TextStreamOpened> | undefined): boolean;
+}
+
+/**
+ * A remote participant published a data track.
+ *
+ * @generated from message livekit.proto.DataTrackPublished
+ */
+export declare class DataTrackPublished extends Message<DataTrackPublished> {
+  /**
+   * @generated from field: required livekit.proto.OwnedRemoteDataTrack track = 1;
+   */
+  track?: OwnedRemoteDataTrack;
+
+  constructor(data?: PartialMessage<DataTrackPublished>);
+
+  static readonly runtime: typeof proto2;
+  static readonly typeName = "livekit.proto.DataTrackPublished";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): DataTrackPublished;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): DataTrackPublished;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): DataTrackPublished;
+
+  static equals(a: DataTrackPublished | PlainMessage<DataTrackPublished> | undefined, b: DataTrackPublished | PlainMessage<DataTrackPublished> | undefined): boolean;
+}
+
+/**
+ * A remote participant unpublished a data track.
+ *
+ * @generated from message livekit.proto.DataTrackUnpublished
+ */
+export declare class DataTrackUnpublished extends Message<DataTrackUnpublished> {
+  /**
+   * SID of the track that was unpublished.
+   *
+   * @generated from field: required string sid = 1;
+   */
+  sid?: string;
+
+  constructor(data?: PartialMessage<DataTrackUnpublished>);
+
+  static readonly runtime: typeof proto2;
+  static readonly typeName = "livekit.proto.DataTrackUnpublished";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): DataTrackUnpublished;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): DataTrackUnpublished;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): DataTrackUnpublished;
+
+  static equals(a: DataTrackUnpublished | PlainMessage<DataTrackUnpublished> | undefined, b: DataTrackUnpublished | PlainMessage<DataTrackUnpublished> | undefined): boolean;
 }
 

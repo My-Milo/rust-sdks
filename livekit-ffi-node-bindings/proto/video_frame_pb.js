@@ -109,6 +109,7 @@ const NewVideoStreamRequest = /*@__PURE__*/ proto2.makeMessageType(
     { no: 2, name: "type", kind: "enum", T: proto2.getEnumType(VideoStreamType), req: true },
     { no: 3, name: "format", kind: "enum", T: proto2.getEnumType(VideoBufferType), opt: true },
     { no: 4, name: "normalize_stride", kind: "scalar", T: 8 /* ScalarType.BOOL */, opt: true },
+    { no: 5, name: "queue_size_frames", kind: "scalar", T: 13 /* ScalarType.UINT32 */, opt: true },
   ],
 );
 
@@ -135,6 +136,7 @@ const VideoStreamFromParticipantRequest = /*@__PURE__*/ proto2.makeMessageType(
     { no: 3, name: "track_source", kind: "enum", T: proto2.getEnumType(TrackSource), req: true },
     { no: 4, name: "format", kind: "enum", T: proto2.getEnumType(VideoBufferType), opt: true },
     { no: 5, name: "normalize_stride", kind: "scalar", T: 8 /* ScalarType.BOOL */, opt: true },
+    { no: 6, name: "queue_size_frames", kind: "scalar", T: 13 /* ScalarType.UINT32 */, opt: true },
   ],
 );
 
@@ -159,6 +161,7 @@ const NewVideoSourceRequest = /*@__PURE__*/ proto2.makeMessageType(
   () => [
     { no: 1, name: "type", kind: "enum", T: proto2.getEnumType(VideoSourceType), req: true },
     { no: 2, name: "resolution", kind: "message", T: VideoSourceResolution, req: true },
+    { no: 3, name: "is_screencast", kind: "scalar", T: 8 /* ScalarType.BOOL */, opt: true },
   ],
 );
 
@@ -184,6 +187,7 @@ const CaptureVideoFrameRequest = /*@__PURE__*/ proto2.makeMessageType(
     { no: 2, name: "buffer", kind: "message", T: VideoBufferInfo, req: true },
     { no: 3, name: "timestamp_us", kind: "scalar", T: 3 /* ScalarType.INT64 */, req: true },
     { no: 4, name: "rotation", kind: "enum", T: proto2.getEnumType(VideoRotation), req: true },
+    { no: 5, name: "metadata", kind: "message", T: FrameMetadata, opt: true },
   ],
 );
 
@@ -270,6 +274,17 @@ const OwnedVideoBuffer = /*@__PURE__*/ proto2.makeMessageType(
 );
 
 /**
+ * @generated from message livekit.proto.FrameMetadata
+ */
+const FrameMetadata = /*@__PURE__*/ proto2.makeMessageType(
+  "livekit.proto.FrameMetadata",
+  () => [
+    { no: 1, name: "user_timestamp", kind: "scalar", T: 4 /* ScalarType.UINT64 */, opt: true },
+    { no: 2, name: "frame_id", kind: "scalar", T: 13 /* ScalarType.UINT32 */, opt: true },
+  ],
+);
+
+/**
  * @generated from message livekit.proto.VideoStreamInfo
  */
 const VideoStreamInfo = /*@__PURE__*/ proto2.makeMessageType(
@@ -311,6 +326,7 @@ const VideoFrameReceived = /*@__PURE__*/ proto2.makeMessageType(
     { no: 1, name: "buffer", kind: "message", T: OwnedVideoBuffer, req: true },
     { no: 2, name: "timestamp_us", kind: "scalar", T: 3 /* ScalarType.INT64 */, req: true },
     { no: 3, name: "rotation", kind: "enum", T: proto2.getEnumType(VideoRotation), req: true },
+    { no: 4, name: "metadata", kind: "message", T: FrameMetadata, opt: true },
   ],
 );
 
@@ -374,6 +390,7 @@ exports.VideoResolution = VideoResolution;
 exports.VideoBufferInfo = VideoBufferInfo;
 exports.VideoBufferInfo_ComponentInfo = VideoBufferInfo_ComponentInfo;
 exports.OwnedVideoBuffer = OwnedVideoBuffer;
+exports.FrameMetadata = FrameMetadata;
 exports.VideoStreamInfo = VideoStreamInfo;
 exports.OwnedVideoStream = OwnedVideoStream;
 exports.VideoStreamEvent = VideoStreamEvent;

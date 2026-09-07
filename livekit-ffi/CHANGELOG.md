@@ -316,6 +316,107 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - bump libwebrtc to m125
+## 0.12.56 (2026-05-11)
+
+### Fixes
+
+- fix: Sync inner.enabled state for E2EE manager. - #1073 (@cloudwebrtc)
+- Upgrade protocol to v1.45.8
+
+## 0.12.55 (2026-05-11)
+
+### Fixes
+
+- chore: add LocalTrackRepublished event for FFI clients - #1072 (@davidzhao)
+
+## 0.12.54 (2026-05-10)
+
+### Features
+
+- Bump `rustls-webpki` to 0.103.13, addressing [GHSA-82j2-j2ch-gfr8](https://github.com/advisories/GHSA-82j2-j2ch-gfr8)
+- Expose error message on EOS for data track subscriptions
+
+### Fixes
+
+- Fix missing `libwebrtc.jar` for Android builds, harden build scripts
+- fix: derive `simulcasted` from non-deprecated TrackInfo fields - #1052 (@cloudwebrtc)
+- fix race in download_webrtc to reduce flaky build - #1047 (@hechen-eng)
+- Improve WebRTC build scripts and add external_audio_source patch - #1053 (@xianshijing-lk)
+- support SimulateScenario through FFI to improve testing - #1069 (@davidzhao)
+- TEL-464: reduce redundant resampling in audio filter - #1019 (@hechen-eng)
+
+## 0.12.53 (2026-04-23)
+
+### Features
+
+#### Add support for frame level packet trailer
+
+##890 by @chenosaurus
+
+- Add support to attach/parse frame level timestamps & frame ID to VideoTracks as a custom payload trailer.
+- Breaking change in VideoFrame API, must include `frame_metadata` or use VideoFrame::new().
+
+### Fixes
+
+- Add device-info crate and send device_info to telemetry - #982 (@maxheimbrock)
+- Fix data track packet format issue breaking E2EE
+- Fix unbound send queue that can cause latency in data track messages - #1032 (@chenosaurus)
+- Fix for raw stream drop called from non tokio thread like Unity .NET GC - #1016 (@MaxHeimbrock)
+
+## 0.12.52 (2026-04-02)
+
+### Features
+
+- Initial support for data tracks
+
+### Fixes
+
+#### use the bounded buffer for video stream
+
+##956 by @xianshijing-lk
+
+Before this PR, it uses an unbounded buffer for video stream, that will cause multiple problems:
+1, video will be lagged behind if rendering is slow or just wake up from background
+2, it will be out of sync with audio
+
+This PRs provides options to set a bounded buffer for video stream, and use 1 buffer as the default option.
+
+## 0.12.51 (2026-03-31)
+
+### Fixes
+
+- Expose participant active event, state, and joined at
+- fix unity android build with "livekit" prefixed jni - #983 (@xianshijing-lk)
+- Upgrade to thiserror 2
+
+## 0.12.50 (2026-03-22)
+
+### Features
+
+#### E2EE: allow setting key_ring_size and key_derivation_algorithm, update webrtc to m144
+
+##921 by @onestacked
+
+This PR uses [this webrtc-sdk PR](https://github.com/webrtc-sdk/webrtc/pull/224) to configure the KDF.
+
+I've tested this with https://codeberg.org/esoteric_programmer/matrix-jukebox and it is compatible with Element Call.
+
+Fixed: https://github.com/livekit/rust-sdks/issues/796
+
+### Fixes
+
+- Fix H.264 codec matching
+
+#### add bounded buffer to audio_stream, and use 10 frames as the default
+
+##945 by @xianshijing-lk
+
+#### Send client os and os_version from rust
+
+##952 by @MaxHeimbrock
+
+Adds [os_info](https://crates.io/crates/os_info) crate as dependency and sends the data for client connections.
+
 ## 0.12.49 (2026-03-13)
 
 ### Fixes

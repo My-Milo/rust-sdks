@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub use crate::utils::take_cell::TakeCell;
 use bmrng::unbounded::UnboundedRequestReceiver;
+use futures_util::{Stream, StreamExt};
 use libwebrtc::{
     native::frame_cryptor::EncryptionState,
     prelude::{
@@ -23,12 +25,15 @@ use libwebrtc::{
     RtcError,
 };
 use livekit_api::signal_client::{SignalOptions, SignalSdkOptions, SIGNAL_CONNECT_TIMEOUT};
-use livekit_protocol::observer::Dispatcher;
+use livekit_datatrack::{
+    api::{DataTrackSid, RemoteDataTrack},
+    backend as dt,
+};
 use livekit_protocol::{self as proto, encryption};
 use livekit_runtime::JoinHandle;
 use parking_lot::RwLock;
 pub use proto::DisconnectReason;
-use proto::{promise::Promise, SignalTarget};
+use proto::SignalTarget;
 use std::{collections::HashMap, fmt::Debug, sync::Arc, time::Duration};
 use thiserror::Error;
 use tokio::sync::{
@@ -36,15 +41,15 @@ use tokio::sync::{
     mpsc::{self, UnboundedReceiver},
     oneshot, Mutex as AsyncMutex,
 };
-pub use utils::take_cell::TakeCell;
 
 pub use self::{
     data_stream::*,
     e2ee::{manager::E2eeManager, E2eeOptions},
-    participant::{ParticipantKind, ParticipantKindDetail},
+    participant::{ParticipantKind, ParticipantKindDetail, ParticipantState},
 };
 pub use crate::rtc_engine::SimulateScenario;
 use crate::{
+    e2ee::data_track::{DataTrackDecryptionProvider, DataTrackEncryptionProvider},
     participant::ConnectionQuality,
     prelude::*,
     registered_audio_filter_plugins,
@@ -52,16 +57,17 @@ use crate::{
         EngineError, EngineEvent, EngineEvents, EngineOptions, EngineResult, RtcEngine,
         SessionStats, INITIAL_BUFFERED_AMOUNT_LOW_THRESHOLD,
     },
+    utils::{observer::Dispatcher, promise::Promise},
 };
 
 pub mod data_stream;
+pub mod data_track;
 pub mod e2ee;
 pub mod id;
 pub mod options;
 pub mod participant;
 pub mod publication;
 pub mod track;
-pub(crate) mod utils;
 
 pub const SDK_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -86,7 +92,16 @@ pub enum RoomError {
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum RoomEvent {
+    /// Remote participant joined the room.
+    ///
+    /// This event is fired immediately after a participant joins before
+    /// it is able to receive data messages. To send data messages in response
+    /// to a participant joining, respond to the [`Self::ParticipantActive`] event instead.
+    ///
     ParticipantConnected(RemoteParticipant),
+    /// Remote participant is active and ready to receive data messages.
+    ParticipantActive(RemoteParticipant),
+    /// Remote participant disconnected from the room.
     ParticipantDisconnected(RemoteParticipant),
     LocalTrackPublished {
         publication: LocalTrackPublication,
@@ -95,6 +110,18 @@ pub enum RoomEvent {
     },
     LocalTrackUnpublished {
         publication: LocalTrackPublication,
+        participant: LocalParticipant,
+    },
+    /// Fired when the SDK auto-republishes a local track during a full
+    /// reconnect. The same underlying `Track` (and its bound source) is
+    /// preserved across the cycle, but the publication and track SIDs are
+    /// re-issued by the server. Bindings are expected to update the
+    /// existing publication object in place rather than treating this as
+    /// an unpublish + publish pair.
+    LocalTrackRepublished {
+        previous_sid: TrackSid,
+        publication: LocalTrackPublication,
+        track: LocalTrack,
         participant: LocalParticipant,
     },
     LocalTrackSubscribed {
@@ -241,6 +268,10 @@ pub enum RoomEvent {
     TokenRefreshed {
         token: String,
     },
+    /// A remote participant published a data track.
+    DataTrackPublished(RemoteDataTrack),
+    /// A remote participant has unpublished a data track.
+    DataTrackUnpublished(DataTrackSid),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -454,6 +485,8 @@ pub(crate) struct RoomSession {
     e2ee_manager: E2eeManager,
     incoming_stream_manager: IncomingStreamManager,
     outgoing_stream_manager: OutgoingStreamManager,
+    local_dt_input: dt::local::ManagerInput,
+    remote_dt_input: dt::remote::ManagerInput,
     handle: AsyncMutex<Option<Handle>>,
 }
 
@@ -461,6 +494,10 @@ struct Handle {
     room_handle: JoinHandle<()>,
     incoming_stream_handle: JoinHandle<()>,
     outgoing_stream_handle: JoinHandle<()>,
+    local_dt_task: JoinHandle<()>,
+    local_dt_forward_task: JoinHandle<()>,
+    remote_dt_task: JoinHandle<()>,
+    remote_dt_forward_task: JoinHandle<()>,
     close_tx: broadcast::Sender<()>,
 }
 
@@ -482,9 +519,11 @@ impl Room {
         mut options: RoomOptions,
     ) -> RoomResult<(Self, mpsc::UnboundedReceiver<RoomEvent>)> {
         // TODO(theomonnom): move connection logic to the RoomSession
+
         let with_dc_encryption = options.encryption.is_some();
         let encryption_options = options.encryption.take().or(options.e2ee.take());
         let e2ee_manager = E2eeManager::new(encryption_options, with_dc_encryption);
+
         let mut signal_options = SignalOptions::default();
         signal_options.sdk_options = options.sdk_options.clone().into();
         signal_options.auto_subscribe = options.auto_subscribe;
@@ -510,15 +549,20 @@ impl Room {
         }
 
         let pi = join_response.participant.unwrap();
+        let pi_kind = pi.kind().into();
+        let pi_kind_details = crate::utils::convert_kind_details(&pi.kind_details);
+        let pi_state = pi.state().into();
         let local_participant = LocalParticipant::new(
             rtc_engine.clone(),
-            pi.kind().into(),
-            utils::convert_kind_details(&pi.kind_details),
+            pi_kind,
+            pi_kind_details,
             pi.sid.try_into().unwrap(),
             pi.identity.into(),
             pi.name,
+            pi_state,
             pi.metadata,
             pi.attributes,
+            pi.joined_at_ms,
             e2ee_manager.encryption_type(),
             pi.permission,
         );
@@ -604,6 +648,25 @@ impl Room {
             }
         });
 
+        let encryption_provider = e2ee_manager.enabled().then(|| {
+            Arc::new(DataTrackEncryptionProvider::new(
+                e2ee_manager.clone(),
+                local_participant.identity().clone(),
+            )) as Arc<dyn dt::EncryptionProvider>
+        });
+        let decryption_provider = e2ee_manager.enabled().then(|| {
+            Arc::new(DataTrackDecryptionProvider::new(e2ee_manager.clone()))
+                as Arc<dyn dt::DecryptionProvider>
+        });
+
+        let local_dt_options = dt::local::ManagerOptions { encryption_provider };
+        let (local_dt_manager, local_dt_input, local_dt_output) =
+            dt::local::Manager::new(local_dt_options);
+
+        let remote_dt_options = dt::remote::ManagerOptions { decryption_provider };
+        let (remote_dt_manager, remote_dt_input, remote_dt_output) =
+            dt::remote::Manager::new(remote_dt_options);
+
         let (incoming_stream_manager, open_rx) = IncomingStreamManager::new();
         let (outgoing_stream_manager, packet_rx) = OutgoingStreamManager::new();
 
@@ -634,6 +697,8 @@ impl Room {
             e2ee_manager: e2ee_manager.clone(),
             incoming_stream_manager,
             outgoing_stream_manager,
+            local_dt_input,
+            remote_dt_input,
             handle: Default::default(),
         });
         inner.local_participant.set_session(Arc::downgrade(&inner));
@@ -665,14 +730,19 @@ impl Room {
         for pi in join_response.other_participants {
             let participant = {
                 let pi = pi.clone();
+                let pi_kind = pi.kind().into();
+                let pi_kind_details = crate::utils::convert_kind_details(&pi.kind_details);
+                let pi_state = pi.state().into();
                 inner.create_participant(
-                    pi.kind().into(),
-                    utils::convert_kind_details(&pi.kind_details),
+                    pi_kind,
+                    pi_kind_details,
                     pi.sid.try_into().unwrap(),
                     pi.identity.into(),
                     pi.name,
+                    pi_state,
                     pi.metadata,
                     pi.attributes,
+                    pi.joined_at_ms,
                     pi.permission,
                 )
             };
@@ -705,10 +775,28 @@ impl Room {
             close_rx.resubscribe(),
         ));
 
+        let local_dt_task = livekit_runtime::spawn(local_dt_manager.run());
+        let local_dt_forward_task = livekit_runtime::spawn(
+            inner.clone().local_dt_forward_task(local_dt_output, close_rx.resubscribe()),
+        );
+
+        let remote_dt_task = livekit_runtime::spawn(remote_dt_manager.run());
+        let remote_dt_forward_task = livekit_runtime::spawn(
+            inner.clone().remote_dt_forward_task(remote_dt_output, close_rx.resubscribe()),
+        );
+
         let room_handle = livekit_runtime::spawn(inner.clone().room_task(engine_events, close_rx));
 
-        let handle =
-            Handle { room_handle, incoming_stream_handle, outgoing_stream_handle, close_tx };
+        let handle = Handle {
+            room_handle,
+            incoming_stream_handle,
+            outgoing_stream_handle,
+            local_dt_task,
+            local_dt_forward_task,
+            remote_dt_task,
+            remote_dt_forward_task,
+            close_tx,
+        };
         inner.handle.lock().await.replace(handle);
 
         Ok((Self { inner }, events))
@@ -953,7 +1041,12 @@ impl RoomSession {
             EngineEvent::TrackMuted { sid, muted } => {
                 self.handle_server_initiated_mute_track(sid, muted);
             }
-            _ => {}
+            EngineEvent::LocalDataTrackInput(event) => {
+                _ = self.local_dt_input.send(event);
+            }
+            EngineEvent::RemoteDataTrackInput(event) => {
+                _ = self.remote_dt_input.send(event);
+            }
         }
 
         Ok(())
@@ -973,6 +1066,10 @@ impl RoomSession {
         let _ = handle.close_tx.send(());
         let _ = handle.incoming_stream_handle.await;
         let _ = handle.outgoing_stream_handle.await;
+        let _ = handle.local_dt_forward_task.await;
+        let _ = handle.local_dt_task.await;
+        let _ = handle.remote_dt_forward_task.await;
+        let _ = handle.remote_dt_task.await;
         let _ = handle.room_handle.await;
 
         self.dispatcher.clear();
@@ -1032,20 +1129,30 @@ impl RoomSession {
                     // disconnected
                 }
             } else if let Some(remote_participant) = remote_participant {
+                let already_active = remote_participant.state() == ParticipantState::Active;
                 remote_participant.update_info(pi.clone());
+                if !already_active && remote_participant.state() == ParticipantState::Active {
+                    self.dispatcher
+                        .dispatch(&RoomEvent::ParticipantActive(remote_participant.clone()));
+                }
                 participants.push(Participant::Remote(remote_participant));
             } else {
                 // Create a new participant
                 let remote_participant = {
                     let pi = pi.clone();
+                    let pi_kind = pi.kind().into();
+                    let pi_kind_details = crate::utils::convert_kind_details(&pi.kind_details);
+                    let pi_state = pi.state().into();
                     self.create_participant(
-                        pi.kind().into(),
-                        utils::convert_kind_details(&pi.kind_details),
+                        pi_kind,
+                        pi_kind_details,
                         pi.sid.try_into().unwrap(),
                         pi.identity.into(),
                         pi.name,
+                        pi_state,
                         pi.metadata,
                         pi.attributes,
+                        pi.joined_at_ms,
                         pi.permission,
                     )
                 };
@@ -1053,6 +1160,11 @@ impl RoomSession {
                 self.dispatcher
                     .dispatch(&RoomEvent::ParticipantConnected(remote_participant.clone()));
 
+                if remote_participant.state() == ParticipantState::Active {
+                    // Already active, also emit active event
+                    self.dispatcher
+                        .dispatch(&RoomEvent::ParticipantActive(remote_participant.clone()));
+                }
                 remote_participant.update_info(pi.clone()); // Add tracks
             }
         }
@@ -1288,6 +1400,9 @@ impl RoomSession {
             });
         }
 
+        let publish_data_tracks =
+            dt::local::publish_responses_for_sync_state(self.local_dt_input.query_tracks().await);
+
         let sync_state = proto::SyncState {
             answer: answer.map(|a| proto::SessionDescription {
                 sdp: a.to_string(),
@@ -1310,7 +1425,7 @@ impl RoomSession {
             publish_tracks: self.local_participant.published_tracks_info(),
             data_channels: dcs,
             datachannel_receive_states: session.data_channel_receive_states(),
-            publish_data_tracks: Default::default(),
+            publish_data_tracks,
         };
 
         log::debug!("sending sync state {:?}", sync_state);
@@ -1439,6 +1554,12 @@ impl RoomSession {
     fn handle_restarted(self: &Arc<Self>, tx: oneshot::Sender<()>) {
         let _ = tx.send(());
 
+        // Ensure the SFU knows about existing data track publications.
+        _ = self.local_dt_input.send(dt::local::InputEvent::RepublishTracks);
+
+        // Ensure SFU continues delivering packets for existing data track subscriptions.
+        _ = self.remote_dt_input.send(dt::remote::InputEvent::ResendSubscriptionUpdates);
+
         // Unpublish and republish every track
         // At this time we know that the RtcSession is successfully restarted
         let published_tracks = self.local_participant.track_publications();
@@ -1457,21 +1578,35 @@ impl RoomSession {
                     let track = publication.track().unwrap();
 
                     let lp = session.local_participant.clone();
+                    let republish_session = session.clone();
                     let republish = async move {
-                        // Only "really" used to send LocalTrackUnpublished event (Since we don't
-                        // really need to remove the RtpSender since we know
-                        // we are using a new RtcSession,
-                        // so new PeerConnetions)
-
-                        let _ = lp.unpublish_track(&publication.sid()).await;
-                        if let Err(err) =
-                            lp.publish_track(track.clone(), publication.publish_options()).await
-                        {
-                            log::error!(
-                                "failed to republish track {} after rtc_engine restarted: {}",
-                                track.name(),
-                                err
-                            )
+                        // The unpublish+publish sequence below regenerates
+                        // server-assigned IDs but preserves the local Track
+                        // Arc (and its bound source). We capture the prior
+                        // SID so the `LocalTrackRepublished` event can carry
+                        // it through to the FFI layer / language bindings,
+                        // which use it to find the existing publication
+                        // object and update it in place.
+                        let previous_sid = publication.sid();
+                        let _ = lp.unpublish_track(&previous_sid).await;
+                        match lp.publish_track(track.clone(), publication.publish_options()).await {
+                            Ok(new_publication) => {
+                                republish_session.dispatcher.dispatch(
+                                    &RoomEvent::LocalTrackRepublished {
+                                        previous_sid,
+                                        publication: new_publication,
+                                        track: track.clone(),
+                                        participant: lp.clone(),
+                                    },
+                                );
+                            }
+                            Err(err) => {
+                                log::error!(
+                                    "failed to republish track {} after rtc_engine restarted: {}",
+                                    track.name(),
+                                    err
+                                )
+                            }
                         }
                     };
 
@@ -1713,8 +1848,10 @@ impl RoomSession {
         sid: ParticipantSid,
         identity: ParticipantIdentity,
         name: String,
+        state: participant::ParticipantState,
         metadata: String,
         attributes: HashMap<String, String>,
+        joined_at: i64,
         permission: Option<proto::ParticipantPermission>,
     ) -> RemoteParticipant {
         let participant = RemoteParticipant::new(
@@ -1724,8 +1861,10 @@ impl RoomSession {
             sid.clone(),
             identity.clone(),
             name,
+            state,
             metadata,
             attributes,
+            joined_at,
             self.options.auto_subscribe,
             permission,
         );
@@ -1887,6 +2026,54 @@ impl RoomSession {
         }
         let event = RoomEvent::TokenRefreshed { token };
         self.dispatcher.dispatch(&event);
+    }
+
+    /// Task for handling output events from the local data track manager.
+    async fn local_dt_forward_task(
+        self: Arc<Self>,
+        mut events: impl Stream<Item = dt::local::OutputEvent> + Unpin,
+        mut close_rx: broadcast::Receiver<()>,
+    ) {
+        loop {
+            tokio::select! {
+                event = events.next() => match event {
+                    Some(event) => _ = self.rtc_engine.handle_local_data_track_output(event).await,
+                    None => break,
+                },
+                _ = close_rx.recv() => {
+                    _ = self.local_dt_input.send(dt::local::InputEvent::Shutdown);
+                    break;
+                },
+            }
+        }
+    }
+
+    /// Task for handling output events from the remote data track manager.
+    async fn remote_dt_forward_task(
+        self: Arc<Self>,
+        mut events: impl Stream<Item = dt::remote::OutputEvent> + Unpin,
+        mut close_rx: broadcast::Receiver<()>,
+    ) {
+        loop {
+            tokio::select! {
+                event = events.next() => match event {
+                    Some(event) => match event {
+                        dt::remote::OutputEvent::TrackPublished(event) => {
+                            _ = self.dispatcher.dispatch(&RoomEvent::DataTrackPublished(event.track));
+                        }
+                        dt::remote::OutputEvent::TrackUnpublished(event) => {
+                            _ = self.dispatcher.dispatch(&RoomEvent::DataTrackUnpublished(event.sid));
+                        }
+                        other => _ = self.rtc_engine.handle_remote_data_track_output(other).await
+                    },
+                    None => break,
+                },
+                _ = close_rx.recv() => {
+                    _ = self.remote_dt_input.send(dt::remote::InputEvent::Shutdown);
+                    break;
+                },
+            }
+        }
     }
 }
 

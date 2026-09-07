@@ -28,7 +28,7 @@ use regex::Regex;
 use reqwest::StatusCode;
 
 pub const SCRATH_PATH: &str = "livekit_webrtc";
-pub const WEBRTC_TAG: &str = "webrtc-24f6822-2";
+pub const WEBRTC_TAG: &str = "webrtc-7af9351";
 pub const IGNORE_DEFINES: [&str; 2] = ["CR_CLANG_REVISION", "CR_XCODE_VERSION"];
 
 pub fn target_os() -> String {
@@ -225,9 +225,21 @@ pub fn download_webrtc() -> Result<()> {
         .context("Failed to create temporary file for WebRTC download")?;
     resp.copy_to(&mut file).context("Failed to write WebRTC download to temporary file")?;
 
+    // Extract into a sibling temp dir, then atomically rename into place so concurrent
+    // observers see either no `webrtc_dir` or a fully-populated one — never the partially-
+    // extracted state that made `fs::copy(webrtc_dir/LICENSE.md, …)` in callers flaky.
+    let tmp_extract = webrtc_dir.parent().unwrap().join(format!(".{}.tmp", webrtc_triple()));
+    let _ = fs::remove_dir_all(&tmp_extract); // clean up leftover from a crashed build
+    fs::create_dir_all(&tmp_extract).context("Failed to create temp extraction dir")?;
+
     let mut archive = zip::ZipArchive::new(file).context("Failed to open WebRTC zip archive")?;
-    archive.extract(webrtc_dir.parent().unwrap()).context("Failed to extract WebRTC archive")?;
+    archive.extract(&tmp_extract).context("Failed to extract WebRTC archive")?;
     drop(archive);
+
+    // The zip root is `{triple}/`, so extracted content sits at `tmp_extract/{triple}/`.
+    fs::rename(tmp_extract.join(webrtc_triple()), &webrtc_dir)
+        .context("Failed to move extracted WebRTC into place")?;
+    let _ = fs::remove_dir_all(&tmp_extract);
 
     fs::remove_file(&tmp_path).context("Failed to remove temporary WebRTC zip file")?;
     Ok(())

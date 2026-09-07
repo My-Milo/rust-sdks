@@ -46,7 +46,6 @@ impl Default for PeerConnectionFactory {
         if log_sink.is_none() {
             *log_sink = Some(sys_rtc::ffi::new_log_sink(|msg, severity| {
                 let msg = msg.strip_suffix("\r\n").or(msg.strip_suffix('\n')).unwrap_or(&msg);
-
                 if let Some(level) = native_log_level(severity) {
                     log::log!(target: "libwebrtc", level, "{}", msg);
                 }
@@ -78,11 +77,9 @@ impl PeerConnectionFactory {
 
     pub fn create_video_track(&self, label: &str, source: NativeVideoSource) -> RtcVideoTrack {
         RtcVideoTrack {
-            handle: imp_vt::RtcVideoTrack {
-                sys_handle: self
-                    .sys_handle
-                    .create_video_track(label.to_string(), source.handle.sys_handle()),
-            },
+            handle: imp_vt::RtcVideoTrack::new(
+                self.sys_handle.create_video_track(label.to_string(), source.handle.sys_handle()),
+            ),
         }
     }
 

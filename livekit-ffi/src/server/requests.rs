@@ -19,12 +19,12 @@ use livekit::{
     prelude::*,
     register_audio_filter_plugin,
     webrtc::{native::apm, native::audio_resampler, prelude::*},
-    AudioFilterPlugin,
+    AudioFilterPlugin, SimulateScenario,
 };
 use parking_lot::Mutex;
 
 use super::{
-    audio_source, audio_stream, colorcvt, data_stream,
+    audio_source, audio_stream, colorcvt, data_stream, data_track,
     participant::FfiParticipant,
     resampler,
     room::{self, FfiPublication, FfiTrack},
@@ -70,16 +70,48 @@ fn on_disconnect(
         .and_then(|r| proto::DisconnectReason::try_from(r).ok())
         .map(DisconnectReason::from)
         .unwrap_or(DisconnectReason::ClientInitiated);
+
+    let ffi_room = server.retrieve_handle::<room::FfiRoom>(disconnect.room_handle)?.clone();
+
     let handle = server.async_runtime.spawn(async move {
-        let ffi_room =
-            server.retrieve_handle::<room::FfiRoom>(disconnect.room_handle).unwrap().clone();
-
         ffi_room.close(server, reason).await;
-
         let _ = server.send_event(proto::DisconnectCallback { async_id }.into());
     });
     server.watch_panic(handle);
     Ok(proto::DisconnectResponse { async_id })
+}
+
+/// Simulate a reconnection scenario for chaos / E2E testing.
+/// This is an async function; the FfiClient must wait for the SimulateScenarioCallback.
+fn on_simulate_scenario(
+    server: &'static FfiServer,
+    request: proto::SimulateScenarioRequest,
+) -> FfiResult<proto::SimulateScenarioResponse> {
+    let async_id = server.resolve_async_id(request.request_async_id);
+    let scenario_kind = proto::SimulateScenarioKind::try_from(request.scenario)
+        .map_err(|_| FfiError::InvalidRequest("unknown SimulateScenarioKind".into()))?;
+    let scenario = match scenario_kind {
+        proto::SimulateScenarioKind::SimulateSignalReconnect => SimulateScenario::SignalReconnect,
+        proto::SimulateScenarioKind::SimulateSpeaker => SimulateScenario::Speaker,
+        proto::SimulateScenarioKind::SimulateNodeFailure => SimulateScenario::NodeFailure,
+        proto::SimulateScenarioKind::SimulateServerLeave => SimulateScenario::ServerLeave,
+        proto::SimulateScenarioKind::SimulateMigration => SimulateScenario::Migration,
+        proto::SimulateScenarioKind::SimulateForceTcp => SimulateScenario::ForceTcp,
+        proto::SimulateScenarioKind::SimulateForceTls => SimulateScenario::ForceTls,
+        proto::SimulateScenarioKind::SimulateFullReconnect => SimulateScenario::FullReconnect,
+    };
+
+    let ffi_room = server.retrieve_handle::<room::FfiRoom>(request.room_handle)?.clone();
+
+    let handle = server.async_runtime.spawn(async move {
+        let error = match ffi_room.inner.room.simulate_scenario(scenario).await {
+            Ok(()) => None,
+            Err(err) => Some(err.to_string()),
+        };
+        let _ = server.send_event(proto::SimulateScenarioCallback { async_id, error }.into());
+    });
+    server.watch_panic(handle);
+    Ok(proto::SimulateScenarioResponse { async_id })
 }
 
 /// Publish a track to a room, and send a response to the FfiClient
@@ -1195,6 +1227,68 @@ fn on_text_stream_close(
     writer.close(server, request)
 }
 
+fn on_publish_data_track(
+    server: &'static FfiServer,
+    request: proto::PublishDataTrackRequest,
+) -> FfiResult<proto::PublishDataTrackResponse> {
+    let ffi_participant =
+        server.retrieve_handle::<FfiParticipant>(request.local_participant_handle)?.clone();
+    ffi_participant.publish_data_track(server, request)
+}
+
+fn on_local_data_track_is_published(
+    server: &'static FfiServer,
+    request: proto::LocalDataTrackIsPublishedRequest,
+) -> FfiResult<proto::LocalDataTrackIsPublishedResponse> {
+    let track =
+        server.retrieve_handle::<data_track::FfiLocalDataTrack>(request.track_handle)?.clone();
+    track.is_published(server, request)
+}
+
+fn on_local_data_track_unpublish(
+    server: &'static FfiServer,
+    request: proto::LocalDataTrackUnpublishRequest,
+) -> FfiResult<proto::LocalDataTrackUnpublishResponse> {
+    let track =
+        server.retrieve_handle::<data_track::FfiLocalDataTrack>(request.track_handle)?.clone();
+    track.unpublish(server, request)
+}
+
+fn on_local_data_track_try_push(
+    server: &'static FfiServer,
+    request: proto::LocalDataTrackTryPushRequest,
+) -> FfiResult<proto::LocalDataTrackTryPushResponse> {
+    let track =
+        server.retrieve_handle::<data_track::FfiLocalDataTrack>(request.track_handle)?.clone();
+    track.try_push(server, request)
+}
+
+fn on_subscribe_local_data_track(
+    server: &'static FfiServer,
+    request: proto::SubscribeDataTrackRequest,
+) -> FfiResult<proto::SubscribeDataTrackResponse> {
+    let track =
+        server.retrieve_handle::<data_track::FfiRemoteDataTrack>(request.track_handle)?.clone();
+    track.subscribe(server, request)
+}
+
+fn on_remote_data_track_is_published(
+    server: &'static FfiServer,
+    request: proto::RemoteDataTrackIsPublishedRequest,
+) -> FfiResult<proto::RemoteDataTrackIsPublishedResponse> {
+    let track =
+        server.retrieve_handle::<data_track::FfiRemoteDataTrack>(request.track_handle)?.clone();
+    track.is_published(server, request)
+}
+
+fn on_data_track_stream_read(
+    server: &'static FfiServer,
+    request: proto::DataTrackStreamReadRequest,
+) -> FfiResult<proto::DataTrackStreamReadResponse> {
+    let stream = server.retrieve_handle::<data_track::FfiDataTrackStream>(request.stream_handle)?;
+    Ok(stream.read(request))
+}
+
 #[allow(clippy::field_reassign_with_default)] // Avoid uggly format
 pub fn handle_request(
     server: &'static FfiServer,
@@ -1210,6 +1304,7 @@ pub fn handle_request(
         Request::Dispose(req) => on_dispose(server, req)?.into(),
         Request::Connect(req) => on_connect(server, req)?.into(),
         Request::Disconnect(req) => on_disconnect(server, req)?.into(),
+        Request::SimulateScenario(req) => on_simulate_scenario(server, req)?.into(),
         Request::PublishTrack(req) => on_publish_track(server, req)?.into(),
         Request::UnpublishTrack(req) => on_unpublish_track(server, req)?.into(),
         Request::PublishData(req) => on_publish_data(server, req)?.into(),
@@ -1294,6 +1389,17 @@ pub fn handle_request(
         Request::SetTrackSubscriptionPermissions(req) => {
             on_set_track_subscription_permissions(server, req)?.into()
         }
+        Request::PublishDataTrack(req) => on_publish_data_track(server, req)?.into(),
+        Request::LocalDataTrackIsPublished(req) => {
+            on_local_data_track_is_published(server, req)?.into()
+        }
+        Request::LocalDataTrackUnpublish(req) => on_local_data_track_unpublish(server, req)?.into(),
+        Request::LocalDataTrackTryPush(req) => on_local_data_track_try_push(server, req)?.into(),
+        Request::SubscribeDataTrack(req) => on_subscribe_local_data_track(server, req)?.into(),
+        Request::RemoteDataTrackIsPublished(req) => {
+            on_remote_data_track_is_published(server, req)?.into()
+        }
+        Request::DataTrackStreamRead(req) => on_data_track_stream_read(server, req)?.into(),
     });
 
     Ok(res)

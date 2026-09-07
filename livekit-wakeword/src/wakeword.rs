@@ -139,6 +139,8 @@ impl WakeWordModel {
             return Ok(HashMap::new());
         }
 
+        let t0 = std::time::Instant::now();
+
         // Resample if needed, then normalize to f32
         let samples_f32 = if self.resampler.is_some() {
             self.resample_to_16k(audio_chunk)?
@@ -146,9 +148,13 @@ impl WakeWordModel {
             audio_chunk.iter().map(|&x| x as f32 / 32768.0).collect()
         };
 
+        let t_resample = t0.elapsed();
+
         // Mel spectrogram over the full chunk
         let mel = self.mel_model.detect(&samples_f32)?;
         let num_frames = mel.shape()[0];
+
+        let t_mel = t0.elapsed();
 
         if num_frames < EMBEDDING_WINDOW {
             return Ok(self.zero_scores());
@@ -175,6 +181,8 @@ impl WakeWordModel {
         let emb_sequence = ndarray::stack(Axis(0), &views)?;
         let emb_input = emb_sequence.insert_axis(Axis(0));
 
+        let t_emb = t0.elapsed();
+
         // Run each classifier
         let mut predictions = HashMap::new();
         for (name, session) in &mut self.classifiers {
@@ -184,6 +192,18 @@ impl WakeWordModel {
             let score = raw.iter().copied().next().unwrap_or(0.0);
             predictions.insert(name.clone(), score);
         }
+
+        let t_cls = t0.elapsed();
+
+        log::info!(
+            "predict breakdown: resample={}ms, mel={}ms, embeddings={}ms, classifier={}ms, total={}ms ({} windows)",
+            t_resample.as_millis(),
+            (t_mel - t_resample).as_millis(),
+            (t_emb - t_mel).as_millis(),
+            (t_cls - t_emb).as_millis(),
+            t_cls.as_millis(),
+            last.len(),
+        );
 
         Ok(predictions)
     }

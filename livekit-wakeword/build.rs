@@ -14,9 +14,7 @@
 
 fn main() {
     println!("cargo::rustc-check-cfg=cfg(use_tract)");
-    let target = std::env::var("TARGET").unwrap_or_default();
-    if target == "aarch64-pc-windows-msvc" {
-        return;
+    if std::env::var("CARGO_FEATURE_TRACT_BACKEND").is_ok() {
+        println!("cargo::rustc-cfg=use_tract");
     }
-    println!("cargo::rustc-cfg=use_tract");
 }
