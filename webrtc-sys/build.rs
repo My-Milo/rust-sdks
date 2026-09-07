@@ -251,10 +251,7 @@ fn main() {
             // Use c++2a for GCC < 11 compatibility (c++20 and c++2a are the same standard).
             // -Wno-changes-meaning is Clang-only; omit on Linux (GCC). -fpermissive allows
             // WebRTC header name lookup (e.g. PortInterface::Network()) to compile with GCC.
-            builder
-                .flag("-Wno-deprecated-declarations")
-                .flag("-std=c++2a")
-                .flag("-fpermissive");
+            builder.flag("-Wno-deprecated-declarations").flag("-std=c++2a").flag("-fpermissive");
         }
         "macos" => {
             println!("cargo:rustc-link-lib=framework=Foundation");

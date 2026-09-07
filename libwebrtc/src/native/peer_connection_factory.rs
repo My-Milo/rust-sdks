@@ -44,9 +44,11 @@ impl Default for PeerConnectionFactory {
     fn default() -> Self {
         let mut log_sink = LOG_SINK.lock();
         if log_sink.is_none() {
-            *log_sink = Some(sys_rtc::ffi::new_log_sink(|msg, _| {
+            *log_sink = Some(sys_rtc::ffi::new_log_sink(|msg, severity| {
                 let msg = msg.strip_suffix("\r\n").or(msg.strip_suffix('\n')).unwrap_or(&msg);
-                log::debug!(target: "libwebrtc", "{}", msg);
+                if let Some(level) = native_log_level(severity) {
+                    log::log!(target: "libwebrtc", level, "{}", msg);
+                }
             }));
         }
 
@@ -112,5 +114,31 @@ mod tests {
         let source = NativeVideoSource::default();
         let _track = factory.create_video_track("test", source);
         drop(factory);
+    }
+}
+
+/// Preserve native failures without enabling the verbose native info stream.
+fn native_log_level(severity: sys_rtc::ffi::LoggingSeverity) -> Option<log::Level> {
+    use sys_rtc::ffi::LoggingSeverity;
+    match severity {
+        LoggingSeverity::Error => Some(log::Level::Error),
+        LoggingSeverity::Warning => Some(log::Level::Warn),
+        LoggingSeverity::Info => Some(log::Level::Debug),
+        LoggingSeverity::Verbose => Some(log::Level::Trace),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod logging_tests {
+    use super::*;
+    #[test]
+    fn preserves_failures_and_keeps_chatter_below_info() {
+        use sys_rtc::ffi::LoggingSeverity as S;
+        assert_eq!(native_log_level(S::Error), Some(log::Level::Error));
+        assert_eq!(native_log_level(S::Warning), Some(log::Level::Warn));
+        assert_eq!(native_log_level(S::Info), Some(log::Level::Debug));
+        assert_eq!(native_log_level(S::Verbose), Some(log::Level::Trace));
+        assert_eq!(native_log_level(S::None), None);
     }
 }
